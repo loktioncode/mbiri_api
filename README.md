@@ -1,89 +1,125 @@
-# Creator-Viewer Platform API
+# Mbiri API - Video Platform
 
-A FastAPI-based backend for a platform connecting content creators with viewers. This API handles user authentication, video management, and analytics.
+A platform for creators to share videos and viewers to earn points by watching content.
 
-## Prerequisites
+## Features
 
-- Python 3.8 or higher
-- MongoDB database
-- Virtual environment (recommended)
+### For Creators
+- Upload and manage YouTube videos
+- Set points per minute for videos
+- Track video analytics and viewer engagement
+- View earnings and performance metrics
 
-## Setup
+### For Viewers
+- Browse and discover videos
+- Add videos to Watch Later list
+- Earn points for watching videos
+- Track points earned and watch history
 
-1. Clone the repository:
+## Tech Stack
+
+### Frontend
+- **Framework**: Next.js 14 with App Router
+- **Styling**: Tailwind CSS
+- **State Management**: React Query
+- **Authentication**: Custom JWT-based auth
+- **Video Player**: YouTube iframe embed
+- **UI Components**: Heroicons
+
+### Backend
+- **Framework**: FastAPI
+- **Database**: MongoDB
+- **Authentication**: JWT
+- **API Documentation**: Swagger UI
+
+## Frontend Setup
+
+1. Install dependencies:
 ```bash
-git clone <repository-url>
-cd mbiri_api
+cd frontend
+npm install
 ```
 
-2. Create and activate a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows, use: venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Create a `.env` file in the root directory with the following variables:
+2. Create `.env.local` file:
 ```env
-MONGODB_URL=your_mongodb_connection_string
-DATABASE_NAME=your_database_name
-SECRET_KEY=your_jwt_secret_key
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-### Environment Variables
+3. Run development server:
+```bash
+npm run dev
+```
 
-- `MONGODB_URL`: MongoDB connection string (default: development MongoDB URL)
-- `DATABASE_NAME`: Name of the MongoDB database (default: "creator_viewer_app")
-- `SECRET_KEY`: Secret key for JWT token generation (default: development key)
+## Frontend Features
 
-## Running the Application
+### Video Discovery
+- Responsive grid layout for video display
+- Video cards with thumbnails, titles, and creator info
+- Points per minute display for viewers
+- Hover effects and play button overlay
 
-1. Start the FastAPI server:
+### Video Page
+- YouTube video player
+- Video details (title, description, creator)
+- Watch Later functionality for logged-in viewers
+- Points earning information
+- Responsive layout
+
+### Watch Later
+- Add/remove videos from watchlist
+- Track watched status
+- Calculate potential points earnings
+- Empty state with call-to-action
+
+### Authentication
+- Login/Register pages
+- Protected routes
+- User type-specific features (creator/viewer)
+- Persistent authentication state
+
+## API Endpoints
+
+### Videos
+- `GET /api/videos/discover` - Get videos for discovery feed
+- `GET /api/videos/{video_id}` - Get specific video
+- `POST /api/videos/{video_id}/watch` - Record watch session (viewer only)
+
+### Authentication
+- `POST /api/auth/register` - Register new user
+- `POST /api/auth/login` - Login user
+- `GET /api/auth/me` - Get current user
+
+## Environment Variables
+
+### Frontend
+- `NEXT_PUBLIC_API_URL` - Backend API URL
+
+### Backend
+- `MONGODB_URL` - MongoDB connection string
+- `JWT_SECRET` - JWT secret key
+- `JWT_ALGORITHM` - JWT algorithm (default: HS256)
+
+## Development
+
+1. Start backend server:
 ```bash
 uvicorn main:app --reload
 ```
 
-The API will be available at `http://localhost:8000`
-
-2. Access the API documentation:
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-## API Features
-
-- User Authentication (Register, Login)
-- User Management
-- Video Management
-- Analytics and Points System
-
-## Development
-
-The application uses:
-- FastAPI for the web framework
-- Motor for async MongoDB operations
-- JWT for authentication
-- Pydantic for data validation
-
-## Project Structure
-
-```
-mbiri_api/
-├── main.py              # Application entry point
-├── config.py            # Configuration settings
-├── database.py          # Database connection and setup
-├── models/              # Pydantic models
-├── routers/             # API route handlers
-├── services/            # Business logic
-└── requirements.txt     # Project dependencies
+2. Start frontend development server:
+```bash
+cd frontend
+npm run dev
 ```
 
-## Security Notes
+3. Access the application:
+- Frontend: http://localhost:3000
+- API Docs: http://localhost:8000/docs
 
-- Always use a strong `SECRET_KEY` in production
-- Never commit `.env` file to version control
-- Use environment-specific MongoDB URLs
-- Implement proper CORS settings for production 
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request 
