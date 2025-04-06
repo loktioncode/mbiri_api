@@ -26,6 +26,7 @@ app.include_router(users.router)
 app.include_router(videos.router)
 app.include_router(analytics.router)
 
+
 @app.on_event("startup")
 async def startup_db_client():
     await connect_and_init_db()
