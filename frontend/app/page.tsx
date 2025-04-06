@@ -8,10 +8,11 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 interface Video {
-  id: string;
+  _id: string;
   youtube_id: string;
   title: string;
   description: string;
+  creator_id: string;
   creator_username: string;
   points_per_minute: number;
 }
@@ -44,6 +45,8 @@ export default function Home() {
     );
   }
 
+  console.log(videos);
+
   return (
     <div>
       {!user && (
@@ -71,7 +74,7 @@ export default function Home() {
       )}
 
       <div className="mb-8 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Featured Videos</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Featured Videos</h1>
         {user?.user_type === 'viewer' && (
           <Link
             href="/videos"
@@ -85,10 +88,10 @@ export default function Home() {
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {videos?.map((video) => (
           <div
-            key={video.id}
+            key={video._id}
             className="group overflow-hidden rounded-lg bg-white shadow-lg transition-transform hover:scale-105"
           >
-            <Link href={`/videos/${video.id}`}>
+            <Link href={`/videos/${video._id}`}>
               <div className="relative">
                 <img
                   src={`https://img.youtube.com/vi/${video.youtube_id}/maxresdefault.jpg`}
@@ -101,7 +104,7 @@ export default function Home() {
               </div>
             </Link>
             <div className="p-4">
-              <Link href={`/videos/${video.id}`}>
+              <Link href={`/videos/${video._id}`}>
                 <h2 className="mb-2 text-lg font-semibold text-gray-900 hover:text-indigo-600">
                   {video.title}
                 </h2>
@@ -110,9 +113,9 @@ export default function Home() {
                 {video.description}
               </p>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">
+                {/* <span className="text-sm text-gray-500">
                   By {video.creator_username}
-                </span>
+                </span> */}
                 {user?.user_type === 'viewer' ? (
                   <span className="rounded-full bg-indigo-100 px-3 py-1 text-sm text-indigo-800">
                     Earn {video.points_per_minute} pts/min

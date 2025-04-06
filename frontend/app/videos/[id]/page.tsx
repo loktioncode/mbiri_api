@@ -51,8 +51,13 @@ function removeFromWatchlist(videoId: string) {
 }
 
 async function fetchVideo(id: string) {
-  const response = await api.get(`/api/videos/${id}`);
-  return response.data;
+  try {
+    const response = await api.get(`/api/videos/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching video:', error);
+    return null;
+  }
 }
 
 export default function VideoPage() {
@@ -62,9 +67,10 @@ export default function VideoPage() {
   const [watchlistItem, setWatchlistItem] = useState<WatchlistItem | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  const { data: video, isLoading: videoLoading } = useQuery<Video>({
+  const { data: video, isLoading: videoLoading, error: videoError } = useQuery<Video>({
     queryKey: ['video', videoId],
     queryFn: () => fetchVideo(videoId),
+    retry: 1, // Only retry once on failure
   });
 
   // Load watchlist item from localStorage on mount
@@ -101,10 +107,10 @@ export default function VideoPage() {
     );
   }
 
-  if (!video) {
+  if (videoError || !video) {
     return (
       <div className="rounded-lg bg-red-50 p-4 text-red-800">
-        Video not found
+        {videoError ? 'An error occurred while loading the video' : 'Video not found'}
       </div>
     );
   }
@@ -118,6 +124,8 @@ export default function VideoPage() {
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
           className="h-full w-full"
+          loading="lazy"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
         />
       </div>
 

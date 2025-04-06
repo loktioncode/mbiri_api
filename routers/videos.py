@@ -43,8 +43,7 @@ async def get_my_videos(
 @router.get("/discover", response_model=List[Video])
 async def discover_videos(
         skip: int = 0,
-        limit: int = 20,
-        current_user: UserInDB = Depends(get_current_user)
+        limit: int = 20
 ) -> Any:
     """
     Get videos for discovery feed
@@ -54,8 +53,7 @@ async def discover_videos(
 
 @router.get("/{video_id}", response_model=Video)
 async def get_video(
-        video_id: str,
-        current_user: UserInDB = Depends(get_current_user)
+        video_id: str
 ) -> Any:
     """
     Get a specific video
@@ -101,7 +99,7 @@ async def record_video_watch(
         current_user: UserInDB = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    Record a video watch session and earn points
+    Record a video watch session and earn points (viewer only)
     """
     if current_user.user_type != "viewer":
         raise HTTPException(
