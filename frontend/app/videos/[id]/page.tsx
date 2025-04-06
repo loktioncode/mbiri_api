@@ -114,7 +114,7 @@ declare global {
 export default function VideoPage() {
   const params = useParams();
   const videoId = params.id as string;
-  const { user } = useAuth();
+  const { user, updatePoints } = useAuth();
   const router = useRouter();
   const [watchlistItem, setWatchlistItem] = useState<WatchlistItem | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -282,7 +282,46 @@ export default function VideoPage() {
       
       // Show points earned notification if points were earned and notification hasn't been shown yet
       if (result?.points_earned > 0 && !pointsEarnedNotificationShown.current) {
-        // Show toast notification
+        // Update points in the navbar with visual feedback
+        if (result?.points_earned) {
+          // Update points in the auth context
+          updatePoints(result.points_earned);
+          
+          // Show navbar update confirmation
+          toast.custom((t) => (
+            <div className={`${
+              t.visible ? 'animate-enter' : 'animate-leave'
+            } max-w-sm bg-white shadow-lg rounded-lg pointer-events-auto flex items-center fixed top-16 right-4 z-50`}>
+              <div className="flex-1 w-0 p-3">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0 pt-0.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="h-6 w-6 text-green-500">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <div className="ml-3 flex-1">
+                    <p className="text-sm font-medium text-gray-900">
+                      Points added to your account!
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Check your updated points in the navbar.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex border-l border-gray-200">
+                <button
+                  onClick={() => toast.dismiss(t.id)}
+                  className="w-full h-full p-3 flex items-center justify-center text-sm font-medium text-indigo-600 hover:text-indigo-500 focus:outline-none"
+                >
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+          ), { duration: 3000, id: 'navbar-points-update' });
+        }
+        
+        // Show main points earned toast
         toast.success(
           <div className="flex items-center space-x-2">
             <span className="font-bold text-lg">+{result.points_earned} points!</span>
@@ -295,7 +334,8 @@ export default function VideoPage() {
             style: {
               padding: '16px',
               fontSize: '16px'
-            }
+            },
+            id: 'main-points-earned'
           }
         );
         
@@ -332,7 +372,7 @@ export default function VideoPage() {
               </div>
             </div>
           ),
-          { duration: 5000, position: 'top-center' }
+          { duration: 5000, position: 'top-center', id: 'celebratory-toast' }
         );
         
         // Update state and flag

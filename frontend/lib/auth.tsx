@@ -17,6 +17,8 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => void;
+  updatePoints: (newPoints: number) => void;
+  refreshUserData: () => Promise<void>;
 }
 
 interface RegisterData {
@@ -50,6 +52,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function refreshUserData() {
+    try {
+      if (localStorage.getItem('token')) {
+        const response = await api.get('/api/users/me');
+        setUser(response.data);
+        return response.data;
+      }
+    } catch (error) {
+      console.error('Error refreshing user data:', error);
+    }
+    return null;
+  }
+
+  // Update user points without fetching from the server
+  function updatePoints(newPoints: number) {
+    if (user) {
+      setUser({
+        ...user,
+        points: user.points + newPoints
+      });
+    }
+  }
+
   async function login(email: string, password: string) {
     const formData = new FormData();
     formData.append('username', email); // API expects email in username field
@@ -80,7 +105,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      isLoading, 
+      login, 
+      register, 
+      logout,
+      updatePoints,
+      refreshUserData
+    }}>
       {children}
     </AuthContext.Provider>
   );
