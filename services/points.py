@@ -40,10 +40,30 @@ async def record_watch_session(
             detail="Only viewers can earn points"
         )
 
-    # Calculate points earned
-    points_per_minute = video.get("points_per_minute", DEFAULT_POINTS_PER_MINUTE)
-    minutes_watched = watch_duration / 60
-    points_earned = int(points_per_minute * minutes_watched)
+    # Check if viewer has already earned points for this video
+    existing_view = await views_collection.find_one({
+        "video_id": ObjectId(video_id),
+        "viewer_id": ObjectId(viewer_id),
+        "points_earned": {"$gt": 0}
+    })
+    
+    if existing_view:
+        # Viewer has already earned points for this video
+        return ViewRecord(**{
+            "_id": str(existing_view["_id"]),
+            "video_id": str(existing_view["video_id"]),
+            "viewer_id": str(existing_view["viewer_id"]),
+            "watch_duration": existing_view["watch_duration"],
+            "points_earned": 0,
+            "created_at": existing_view["created_at"]
+        }), 0
+
+    # Calculate points earned - only award points if watched for at least a minute
+    points_earned = 0
+    if watch_duration >= 60:  # 60 seconds = 1 minute
+        points_per_minute = video.get("points_per_minute", DEFAULT_POINTS_PER_MINUTE)
+        minutes_watched = watch_duration / 60
+        points_earned = int(points_per_minute * minutes_watched)
 
     # Create view record
     view_record = {
@@ -60,11 +80,12 @@ async def record_watch_session(
     view_record["video_id"] = str(view_record["video_id"])
     view_record["viewer_id"] = str(view_record["viewer_id"])
 
-    # Update viewer's points
-    await users_collection.update_one(
-        {"_id": ObjectId(viewer_id)},
-        {"$inc": {"points": points_earned}}
-    )
+    # Update viewer's points only if points were earned
+    if points_earned > 0:
+        await users_collection.update_one(
+            {"_id": ObjectId(viewer_id)},
+            {"$inc": {"points": points_earned}}
+        )
 
     return ViewRecord(**view_record), points_earned
 

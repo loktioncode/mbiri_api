@@ -1,55 +1,146 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { PlayIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
+// Interface for videos
+interface Video {
+  id: string;
+  youtube_id: string;
+  title: string;
+  description: string;
+  creator_username: string;
+  points_per_minute: number;
+}
+
+// Interface for watchlist items from localStorage
 interface WatchlistItem {
-  watchlist_id: string;
+  videoId: string;
+  dateAdded: string;
+  watched: boolean;
+}
+
+// Interface for watchlist items with video data
+interface WatchlistItemWithVideo {
+  watchlist_id: string; // using videoId as the ID
   video_id: string;
   watched: boolean;
   points_earned: boolean;
   added_at: string;
-  video: {
-    id: string;
-    youtube_id: string;
-    title: string;
-    description: string;
-    creator_username: string;
-    points_per_minute: number;
-  };
+  video: Video;
 }
 
-async function fetchWatchlist() {
-  const response = await api.get('/api/watchlist');
-  return response.data;
+// Local storage key - must match the one used in [id]/page.tsx
+const WATCHLIST_KEY = 'mbiri_watchlist';
+
+// Helper functions for localStorage
+function getWatchlist(): WatchlistItem[] {
+  if (typeof window === 'undefined') return [];
+  const watchlist = localStorage.getItem(WATCHLIST_KEY);
+  return watchlist ? JSON.parse(watchlist) : [];
+}
+
+function removeFromWatchlist(videoId: string) {
+  const watchlist = getWatchlist();
+  const updatedWatchlist = watchlist.filter(item => item.videoId !== videoId);
+  localStorage.setItem(WATCHLIST_KEY, JSON.stringify(updatedWatchlist));
+}
+
+// Function to fetch videos for items in the watchlist
+async function fetchWatchlistVideos(videoIds: string[]): Promise<Record<string, Video>> {
+  if (!videoIds.length) return {};
+  
+  try {
+    // Fetch videos one by one
+    const videos: Record<string, Video> = {};
+    
+    for (const id of videoIds) {
+      try {
+        const response = await api.get(`/api/videos/${id}`);
+        videos[id] = response.data;
+      } catch (error) {
+        console.error(`Error fetching video ${id}:`, error);
+      }
+    }
+    
+    return videos;
+  } catch (error) {
+    console.error('Error fetching watchlist videos:', error);
+    return {};
+  }
 }
 
 export default function WatchLaterPage() {
   const { user } = useAuth();
   const router = useRouter();
-  const queryClient = useQueryClient();
+  const [watchlistWithVideos, setWatchlistWithVideos] = useState<WatchlistItemWithVideo[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const { data: watchlist, isLoading } = useQuery<WatchlistItem[]>({
-    queryKey: ['watchlist'],
-    queryFn: fetchWatchlist,
-    enabled: !!user && user.user_type === 'viewer',
-  });
+  // Use useEffect for navigation
+  useEffect(() => {
+    if (!user || user.user_type !== 'viewer') {
+      router.push('/');
+    }
+  }, [user, router]);
 
-  const removeMutation = useMutation({
-    mutationFn: (watchlistId: string) =>
-      api.delete(`/api/watchlist/${watchlistId}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['watchlist'] });
-    },
-  });
+  // Load watchlist data from localStorage
+  useEffect(() => {
+    async function loadWatchlistData() {
+      if (!user || user.user_type !== 'viewer') return;
+      
+      setIsLoading(true);
+      try {
+        const watchlistItems = getWatchlist();
+        
+        if (watchlistItems.length === 0) {
+          setWatchlistWithVideos([]);
+          setIsLoading(false);
+          return;
+        }
+        
+        // Get all video IDs in the watchlist
+        const videoIds = watchlistItems.map(item => item.videoId);
+        
+        // Fetch video data for all IDs
+        const videosData = await fetchWatchlistVideos(videoIds);
+        
+        // Combine watchlist items with video data
+        const watchlistWithVideoData = watchlistItems
+          .filter(item => videosData[item.videoId]) // Only include items where we could fetch the video
+          .map(item => ({
+            watchlist_id: item.videoId, // Use videoId as the watchlist_id
+            video_id: item.videoId,
+            watched: item.watched,
+            points_earned: false, // We don't track points earned in localStorage yet
+            added_at: item.dateAdded,
+            video: videosData[item.videoId]
+          }));
+        
+        setWatchlistWithVideos(watchlistWithVideoData);
+      } catch (error) {
+        console.error('Error processing watchlist:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    
+    loadWatchlistData();
+  }, [user]);
 
+  // Handle removing an item from the watchlist
+  const handleRemoveFromWatchlist = (videoId: string) => {
+    removeFromWatchlist(videoId);
+    setWatchlistWithVideos(prev => prev.filter(item => item.video_id !== videoId));
+  };
+
+  // Don't render anything significant if we're redirecting
   if (!user || user.user_type !== 'viewer') {
-    router.push('/');
-    return null;
+    return <div className="flex h-96 items-center justify-center">Loading...</div>;
   }
 
   if (isLoading) {
@@ -61,7 +152,7 @@ export default function WatchLaterPage() {
   }
 
   // Calculate potential earnings
-  const totalPotentialPoints = watchlist
+  const totalPotentialPoints = watchlistWithVideos
     ?.filter(item => !item.points_earned)
     .reduce((total, item) => total + item.video.points_per_minute, 0) || 0;
 
@@ -76,7 +167,7 @@ export default function WatchLaterPage() {
         </div>
       </div>
 
-      {watchlist?.length === 0 ? (
+      {watchlistWithVideos.length === 0 ? (
         <div className="rounded-lg bg-gray-50 p-8 text-center">
           <p className="text-gray-600">Your watch later list is empty.</p>
           <Link
@@ -88,7 +179,7 @@ export default function WatchLaterPage() {
         </div>
       ) : (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {watchlist?.map((item) => (
+          {watchlistWithVideos.map((item) => (
             <div
               key={item.watchlist_id}
               className={`group relative overflow-hidden rounded-lg bg-white shadow-lg ${
@@ -116,7 +207,7 @@ export default function WatchLaterPage() {
                     </h2>
                   </Link>
                   <button
-                    onClick={() => removeMutation.mutate(item.watchlist_id)}
+                    onClick={() => handleRemoveFromWatchlist(item.video_id)}
                     className="ml-2 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-500"
                   >
                     <TrashIcon className="h-5 w-5" />

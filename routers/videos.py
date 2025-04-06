@@ -100,6 +100,11 @@ async def record_video_watch(
 ) -> Dict[str, Any]:
     """
     Record a video watch session and earn points (viewer only)
+    
+    Points are only awarded if:
+    - The user is a viewer
+    - The user watches for at least 60 seconds (1 minute)
+    - The user has not previously earned points for this video
     """
     if current_user.user_type != "viewer":
         raise HTTPException(
@@ -117,5 +122,6 @@ async def record_video_watch(
         "success": True,
         "points_earned": points_earned,
         "watch_duration": watch_duration,
-        "video_id": video_id
+        "video_id": video_id,
+        "already_earned": points_earned == 0 and watch_duration >= 60
     }

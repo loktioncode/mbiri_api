@@ -6,8 +6,14 @@ import { usePathname } from 'next/navigation';
 import { HomeIcon, VideoCameraIcon, TrophyIcon, UserCircleIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/lib/auth';
 
-const navigation = [
+// Base navigation that's always visible
+const baseNavigation = [
   { name: 'Home', href: '/', icon: HomeIcon },
+  { name: 'About', href: '/about', icon: UserCircleIcon },
+];
+
+// Navigation items only for authenticated users
+const authNavigation = [
   { name: 'Videos', href: '/videos', icon: VideoCameraIcon },
   { name: 'Leaderboard', href: '/leaderboard', icon: TrophyIcon },
 ];
@@ -16,6 +22,11 @@ export default function Navbar() {
   const pathname = usePathname();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const { user, logout, isLoading } = useAuth();
+
+  // Determine which navigation items to show based on authentication status
+  const navigationItems = user 
+    ? [...baseNavigation, ...authNavigation] 
+    : baseNavigation;
 
   return (
     <nav className="bg-white shadow-lg">
@@ -28,7 +39,7 @@ export default function Navbar() {
               </Link>
             </div>
             <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-              {navigation.map((item) => {
+              {navigationItems.map((item) => {
                 const isActive = pathname === item.href;
                 return (
                   <Link
