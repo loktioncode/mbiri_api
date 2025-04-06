@@ -52,6 +52,27 @@ function removeFromWatchlist(videoId: string) {
   localStorage.setItem(WATCHLIST_KEY, JSON.stringify(updatedWatchlist));
 }
 
+// Add functions for storing and retrieving watch time
+const WATCH_TIME_KEY = 'mbiri_watch_times';
+
+function getWatchTimes(): Record<string, number> {
+  if (typeof window === 'undefined') return {};
+  const watchTimes = localStorage.getItem(WATCH_TIME_KEY);
+  return watchTimes ? JSON.parse(watchTimes) : {};
+}
+
+function saveWatchTime(videoId: string, seconds: number) {
+  if (typeof window === 'undefined') return;
+  const watchTimes = getWatchTimes();
+  watchTimes[videoId] = seconds;
+  localStorage.setItem(WATCH_TIME_KEY, JSON.stringify(watchTimes));
+}
+
+function getWatchTime(videoId: string): number {
+  const watchTimes = getWatchTimes();
+  return watchTimes[videoId] || 0;
+}
+
 async function fetchVideo(id: string) {
   try {
     const response = await api.get(`/api/videos/${id}`);
@@ -74,9 +95,7 @@ async function fetchRecommendedVideos() {
 
 async function recordWatchSession(videoId: string, watchDuration: number) {
   try {
-    const response = await api.post(`/api/videos/${videoId}/watch`, {
-      watch_duration: watchDuration
-    });
+    const response = await api.post(`/api/videos/${videoId}/watch?watch_duration=${watchDuration}`);
     return response.data;
   } catch (error) {
     console.error('Error recording watch session:', error);
@@ -418,7 +437,7 @@ export default function VideoPage() {
       }
     };
     
-    // When player is ready
+    // When player is ready - seek to saved position
     const onPlayerReady = (event: any) => {
       // Check if video is actually playing
       const playerState = event.target.getPlayerState();
@@ -427,6 +446,20 @@ export default function VideoPage() {
       // Focus iframe to help with autoplay
       if (iframeRef.current) {
         iframeRef.current.focus();
+      }
+      
+      // If there's a saved position, seek to it
+      const savedTime = getWatchTime(videoId);
+      if (savedTime > 10 && savedTime < (event.target.getDuration() - 5)) {
+        // Only seek if we have a meaningful amount of watch time
+        // and we're not at the very end of the video
+        try {
+          // Seek to the saved position
+          event.target.seekTo(savedTime);
+          console.log(`Seeking to saved position: ${savedTime} seconds`);
+        } catch (error) {
+          console.error('Error seeking to saved position:', error);
+        }
       }
     };
     
@@ -507,6 +540,86 @@ export default function VideoPage() {
     };
   }, [video]);
 
+  // Initialize watchTime from localStorage if available
+  useEffect(() => {
+    if (video && videoId) {
+      const savedTime = getWatchTime(videoId);
+      if (savedTime > 0) {
+        setWatchTime(savedTime);
+        // If they've already watched more than a minute, mark as earned
+        if (savedTime >= 60) {
+          setHasEarnedPoints(true);
+          pointsEarnedNotificationShown.current = true;
+        }
+      }
+    }
+  }, [video, videoId]);
+  
+  // Save watch time to localStorage periodically and when component unmounts
+  useEffect(() => {
+    if (!videoId || watchTime <= 0) return;
+    
+    // Save every 5 seconds to avoid excessive writes
+    const saveInterval = setInterval(() => {
+      saveWatchTime(videoId, watchTime);
+    }, 5000);
+    
+    // Also save on unmount
+    return () => {
+      clearInterval(saveInterval);
+      saveWatchTime(videoId, watchTime);
+    };
+  }, [videoId, watchTime]);
+
+  // Add a resume notification if applicable
+  useEffect(() => {
+    const savedTime = getWatchTime(videoId);
+    if (savedTime > 0 && video) {
+      const minutes = Math.floor(savedTime / 60);
+      const seconds = savedTime % 60;
+      
+      // Only show the notification if they've watched more than 10 seconds
+      if (savedTime > 10) {
+        toast.success(
+          <div className="flex items-center space-x-2">
+            <span>Resuming from {minutes}m {seconds}s</span>
+          </div>,
+          {
+            duration: 3000,
+            position: 'bottom-center',
+            icon: '⏱️',
+          }
+        );
+      }
+    }
+  }, [video, videoId]);
+
+  // Add reset function
+  const resetWatchProgress = () => {
+    // Clear saved watch time
+    saveWatchTime(videoId, 0);
+    
+    // Reset state
+    setWatchTime(0);
+    setHasEarnedPoints(false);
+    pointsEarnedNotificationShown.current = false;
+    
+    // Try to restart the video
+    try {
+      if (window.YT && iframeRef.current && iframeRef.current.id) {
+        const player = window.YT.get(iframeRef.current.id);
+        if (player) {
+          player.seekTo(0);
+          player.playVideo();
+        }
+      }
+    } catch (error) {
+      console.error('Error restarting video:', error);
+    }
+    
+    toast.success('Watch progress reset');
+  };
+
   if (videoLoading) {
     return (
       <div className="flex h-96 items-center justify-center">
@@ -576,6 +689,18 @@ export default function VideoPage() {
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">{video.title}</h1>
                 <p className="text-sm text-gray-500 mt-1">By {video.creator_username}</p>
+                
+                {/* Add watch progress indicator */}
+                {watchTime > 10 && (
+                  <div className="mt-2 w-full bg-gray-200 rounded-full h-1.5">
+                    <div 
+                      className="bg-indigo-600 h-1.5 rounded-full" 
+                      style={{ 
+                        width: `${Math.min((watchTime / (10 * 60)) * 100, 100)}%` 
+                      }}
+                    ></div>
+                  </div>
+                )}
               </div>
               
               <div className="flex items-center space-x-2">
@@ -587,6 +712,19 @@ export default function VideoPage() {
                 >
                   {isPlaying ? <PauseIcon className="h-5 w-5" /> : <PlayIcon className="h-5 w-5" />}
                 </button>
+                
+                {/* Restart video button - only show if there's progress */}
+                {watchTime > 10 && (
+                  <button
+                    onClick={resetWatchProgress}
+                    className="flex items-center justify-center rounded-full w-10 h-10 bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    title="Restart video"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                    </svg>
+                  </button>
+                )}
                 
                 {/* Watchlist button - only for logged in viewers */}
                 {user?.user_type === 'viewer' && (
