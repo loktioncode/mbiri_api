@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { PlayIcon, BookmarkIcon, BookmarkSlashIcon, XMarkIcon, PauseIcon } from '@heroicons/react/24/outline';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
 
 interface Video {
@@ -163,6 +163,11 @@ export default function VideoPage() {
   const [isTimerActive, setTimerActive] = useState<boolean>(false);
   const [watchSessionStarted, setWatchSessionStarted] = useState<boolean>(false);
   const [fullyWatched, setFullyWatched] = useState<boolean>(false);
+  const [earnedBonusPoints, setEarnedBonusPoints] = useState(0);
+  const [lastBonusToastTime, setLastBonusToastTime] = useState<number>(0);
+  const bonusPointsRef = useRef(0);
+  const lastReportTimeRef = useRef(0);
+  const reportingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: videoData, isLoading: videoLoading, error: videoError } = useQuery<Video>({
     queryKey: ['video', videoId],
@@ -270,10 +275,20 @@ export default function VideoPage() {
         watchTimeIntervalRef.current = setInterval(() => {
           setWatchTime(prev => {
             const newWatchTime = prev + 1;
+            
             // If we hit exactly 60 seconds, trigger point earning immediately
             if (newWatchTime === 60) {
               handleReportWatchTime(newWatchTime);
             }
+            
+            // Calculate bonus points for continuing viewers
+            if ((hasEarnedPoints || alreadyEarnedForThisVideo) && !fullyWatched) {
+              // Track bonus points accumulation (10% of points per minute)
+              bonusPointsRef.current += video?.points_per_minute ? video.points_per_minute / 600 : 0.01;
+              
+              // Don't update state here - just track it for the next useEffect
+            }
+            
             return newWatchTime;
           });
           lastActivityTime.current = Date.now(); // Update last activity
@@ -289,7 +304,59 @@ export default function VideoPage() {
         }
       };
     }
-  }, [user, videoData, isPlaying, isVideoMounted, videoId]);
+  }, [user, videoData, isPlaying, isVideoMounted, videoId, hasEarnedPoints, alreadyEarnedForThisVideo, fullyWatched, video?.points_per_minute]);
+  
+  // Add a separate useEffect to handle toasts and state updates for bonus points
+  useEffect(() => {
+    // Only run if the video is playing and there are points to accumulate
+    if (!isPlaying || !(hasEarnedPoints || alreadyEarnedForThisVideo) || fullyWatched) return;
+    
+    // Check for whole bonus points
+    const wholeBonusPoints = Math.floor(bonusPointsRef.current);
+    if (wholeBonusPoints > earnedBonusPoints) {
+      // Calculate points earned in this update
+      const pointsEarned = wholeBonusPoints - earnedBonusPoints;
+      
+      // Update state
+      setEarnedBonusPoints(wholeBonusPoints);
+      
+      // Only show toast max once every 60 seconds
+      const now = Date.now();
+      if (now - lastBonusToastTime > 60000) {
+        setLastBonusToastTime(now);
+        
+        // Update points in the navbar with visual feedback
+        updatePoints(pointsEarned);
+        
+        // Show a comprehensive toast that points were earned and added to profile
+        toast.success(
+          <div className="flex flex-col">
+            <div className="flex items-center space-x-2">
+              <span className="font-bold text-lg">+{pointsEarned} bonus points!</span>
+            </div>
+            <span className="text-sm mt-1">Added to your profile</span>
+          </div>,
+          {
+            duration: 4000,
+            position: 'bottom-center',
+            className: 'bg-indigo-50 text-indigo-800 border border-indigo-200',
+            icon: '💰',
+            style: {
+              padding: '16px',
+              fontSize: '16px'
+            }
+          }
+        );
+      }
+    }
+  }, [isPlaying, earnedBonusPoints, lastBonusToastTime, hasEarnedPoints, alreadyEarnedForThisVideo, fullyWatched, updatePoints]);
+  
+  // Reset bonus points when video changes
+  useEffect(() => {
+    bonusPointsRef.current = 0;
+    setEarnedBonusPoints(0);
+    setLastBonusToastTime(0);
+  }, [videoId]);
   
   // Report watch time periodically after the first minute
   useEffect(() => {
@@ -326,7 +393,7 @@ export default function VideoPage() {
       if (result?.already_earned) {
         setAlreadyEarnedForThisVideo(true);
         
-        // Show a notification about continuing points if points were earned in this call
+        // Show a notification about continuing points if points were earned in this session
         if (result?.continuing_points && result?.points_earned > 0) {
           // Update points in the navbar with visual feedback
           updatePoints(result.points_earned);
@@ -514,27 +581,32 @@ export default function VideoPage() {
     }
   };
 
-  // Update the YouTube iframe API integration to better detect if video is actually playing
+  // Setup YouTube iframe API and get video duration
   useEffect(() => {
-    if (!videoData || !iframeRef.current) return;
-
-    // Initial state - assume not playing until confirmed
-    setIsPlaying(false);
-
-    let player: any = null;
+    if (!videoData || !iframeRef.current || !isVideoMounted) return;
     
-    // Define the YouTube API callback
-    const onYouTubeIframeAPIReady = () => {
-      // Safe check in case component unmounted
-      if (!iframeRef.current) return;
+    // Load YouTube API if not already loaded
+    const loadYouTubeAPI = () => {
+      if (!window.YT) {
+        const tag = document.createElement('script');
+        tag.src = 'https://www.youtube.com/iframe_api';
+        const firstScriptTag = document.getElementsByTagName('script')[0];
+        if (firstScriptTag && firstScriptTag.parentNode) {
+          firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        }
+        
+        window.onYouTubeIframeAPIReady = initializePlayer;
+      } else if (window.YT.Player) {
+        initializePlayer();
+      }
+    };
+    
+    // Initialize the player once API is ready
+    const initializePlayer = () => {
+      if (!iframeRef.current || !iframeRef.current.id) return;
       
       try {
-        // Get iframe ID
-        const iframeId = 'youtube-player';
-        iframeRef.current.id = iframeId;
-        
-        // Create YouTube player instance
-        player = new window.YT.Player(iframeId, {
+        const player = new window.YT.Player(iframeRef.current.id, {
           events: {
             'onReady': onPlayerReady,
             'onStateChange': onPlayerStateChange
@@ -542,140 +614,52 @@ export default function VideoPage() {
         });
       } catch (error) {
         console.error('Error initializing YouTube player:', error);
-        // Fallback to simpler detection
-        setupFallbackDetection();
       }
     };
     
-    // When player is ready - seek to saved position
+    // Handle player ready event
     const onPlayerReady = (event: any) => {
-      // Check if video is actually playing
-      const playerState = event.target.getPlayerState();
-      setIsPlaying(playerState === 1); // 1 = playing
+      console.log('YouTube player ready');
       
-      // Focus iframe to help with autoplay
-      if (iframeRef.current) {
-        iframeRef.current.focus();
-      }
-      
-      // Get actual video duration from the player
+      // Get video duration
       try {
         const duration = event.target.getDuration();
-        if (duration && duration > 0 && !isNaN(duration)) {
-          // Update our video with the actual duration
-          if (videoData) {
-            console.log(`Updating video duration from ${videoData.duration_seconds || 'undefined'} to ${Math.floor(duration)} seconds`);
-            // If we have a video object, update its duration
-            setVideo(prevVideo => {
-              if (prevVideo) {
-                return { ...prevVideo, duration_seconds: Math.floor(duration) };
-              }
-              return prevVideo;
-            });
-          }
-        } else {
-          console.warn('Received invalid duration from YouTube API:', duration);
+        if (duration && !isNaN(duration) && duration > 0) {
+          console.log(`Video duration from YouTube: ${duration} seconds`);
+          
+          // Update video object with duration
+          setVideo(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              duration_seconds: duration
+            };
+          });
         }
       } catch (error) {
         console.error('Error getting video duration:', error);
       }
-      
-      // If there's a saved position, seek to it
-      const savedTime = getWatchTime(videoId);
-      const videoDuration = event.target.getDuration();
-      
-      if (savedTime > 10) {
-        const isNearEnd = videoDuration && !isNaN(videoDuration) && savedTime >= (videoDuration - 5);
-        
-        if (!isNearEnd) {
-          // Only seek if we're not at the very end of the video
-          try {
-            // Seek to the saved position
-            event.target.seekTo(savedTime);
-            console.log(`Seeking to saved position: ${savedTime} seconds`);
-          } catch (error) {
-            console.error('Error seeking to saved position:', error);
-          }
-        }
-      }
     };
     
-    // When player state changes
+    // Handle player state changes
     const onPlayerStateChange = (event: any) => {
-      // Update playing state based on player state
-      const isVideoPlaying = event.data === 1; // 1 = playing
-      setIsPlaying(isVideoPlaying);
+      const playerState = event.data;
       
-      if (isVideoPlaying) {
-        lastActivityTime.current = Date.now();
-      }
-    };
-    
-    // Fallback detection when YouTube API integration fails
-    const setupFallbackDetection = () => {
-      // Try to detect when the video is actually playing
-      const checkVideoPlaying = setInterval(() => {
-        // If the iframe is focused or has recent activity, consider the video playing
-        if (document.activeElement === iframeRef.current) {
-          const timeSinceLastActivity = Date.now() - lastActivityTime.current;
-          // Only set to playing if recent activity
-          if (timeSinceLastActivity < 2000) {
-            setIsPlaying(true);
-          }
-        }
-      }, 1000);
-      
-      return () => {
-        clearInterval(checkVideoPlaying);
-      };
-    };
-    
-    // Load YouTube API if not already loaded
-    if (typeof window !== 'undefined') {
-      if (!window.YT) {
-        const tag = document.createElement('script');
-        tag.src = 'https://www.youtube.com/iframe_api';
-        const firstScriptTag = document.getElementsByTagName('script')[0];
-        firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-        
-        // Set up callback
-        window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
-      } else {
-        // API already loaded
-        onYouTubeIframeAPIReady();
-      }
-    }
-    
-    // Listen for window focus/blur to detect if the user has switched tabs
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // User switched tabs or minimized window - pause timer
+      // YT.PlayerState.PLAYING = 1, YT.PlayerState.PAUSED = 2
+      if (playerState === 1) {
+        setIsPlaying(true);
+      } else if (playerState === 2) {
         setIsPlaying(false);
-      } else if (player && player.getPlayerState) {
-        // Check actual player state when returning to tab
-        try {
-          const playerState = player.getPlayerState();
-          setIsPlaying(playerState === 1); // 1 = playing
-        } catch (e) {
-          // If can't access player state, keep current state
-        }
       }
     };
     
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    loadYouTubeAPI();
     
-    // Cleanup function
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (player && player.destroy) {
-        try {
-          player.destroy();
-        } catch (e) {
-          // Ignore errors on cleanup
-        }
-      }
+      // Clean up
+      window.onYouTubeIframeAPIReady = function() {};
     };
-  }, [videoData]);
+  }, [videoData, isVideoMounted]);
 
   // Initialize watchTime from localStorage if available
   useEffect(() => {
@@ -911,6 +895,111 @@ export default function VideoPage() {
     return false;
   };
 
+  // Function to calculate bonus points based on watch time
+  const calculateBonusPoints = useCallback((seconds: number) => {
+    if (!video) return 0;
+    const pointsPerMinute = video.points_per_minute * 0.1; // 10% rate
+    return Math.floor((seconds / 60) * pointsPerMinute);
+  }, [video]);
+
+  // Add a useEffect for tracking bonus points continuously
+  useEffect(() => {
+    if (
+      user?.user_type === 'viewer' && 
+      isPlaying && 
+      (hasEarnedPoints || alreadyEarnedForThisVideo) && 
+      !fullyWatched
+    ) {
+      // Update bonus points counter each second
+      const bonusInterval = setInterval(() => {
+        if (isPlaying && watchTime >= 60) {
+          // Calculate current bonus points
+          const currentBonusPoints = calculateBonusPoints(watchTime);
+          
+          // Update ref with current calculation
+          bonusPointsRef.current = currentBonusPoints;
+          
+          // Update state for display (this triggers re-render)
+          setEarnedBonusPoints(currentBonusPoints);
+        }
+      }, 1000);
+      
+      return () => clearInterval(bonusInterval);
+    }
+  }, [isPlaying, watchTime, hasEarnedPoints, alreadyEarnedForThisVideo, fullyWatched, user, calculateBonusPoints]);
+  
+  // Add a throttled API reporting system (every 1 minute exactly)
+  useEffect(() => {
+    // Only set up reporting if conditions are met
+    if (
+      user?.user_type === 'viewer' && 
+      isPlaying && 
+      (hasEarnedPoints || alreadyEarnedForThisVideo) && 
+      !fullyWatched &&
+      watchTime >= 60 // At least 1 minute watched
+    ) {
+      console.log('Setting up continued watching reporting interval (60s)');
+      
+      // First clear any existing timer to avoid duplicates
+      if (reportingIntervalRef.current) {
+        clearInterval(reportingIntervalRef.current);
+      }
+      
+      // Set up interval to report continued watching time every 1 minute exactly
+      const interval = setInterval(() => {
+        // Get current timestamp
+        const now = Date.now();
+        
+        // Only report if it's been at least 60 seconds since last report
+        if (now - lastReportTimeRef.current >= 60000) {
+          console.log(`Reporting continued watching time: ${watchTime} seconds`);
+          handleReportWatchTime();
+          // Update last report time
+          lastReportTimeRef.current = now;
+        }
+      }, 60000); // 1 minute exactly
+      
+      // Store the interval ID in a ref so we can clear it
+      reportingIntervalRef.current = interval;
+      
+      return () => {
+        if (reportingIntervalRef.current) {
+          clearInterval(reportingIntervalRef.current);
+          reportingIntervalRef.current = null;
+        }
+      };
+    }
+  }, [isPlaying, hasEarnedPoints, alreadyEarnedForThisVideo, fullyWatched, watchTime, user]);
+  
+  // Report final watch time when unmounting
+  useEffect(() => {
+    return () => {
+      // Only report if we've watched enough to earn points and haven't fully watched
+      if (
+        user?.user_type === 'viewer' && 
+        (hasEarnedPoints || alreadyEarnedForThisVideo) && 
+        !fullyWatched &&
+        watchTime < 60
+      ) {
+        console.log(`Reporting final watch time on unmount: ${watchTime} seconds`);
+        handleReportWatchTime();
+      }
+    };
+  }, [handleReportWatchTime, hasEarnedPoints, alreadyEarnedForThisVideo, fullyWatched, watchTime, user]);
+  
+  // Progress bar calculation - make this smoother with interpolation
+  const calculateProgressPercentage = useCallback(() => {
+    if (!bonusPointsRef.current) return 0;
+    
+    const currentPoints = earnedBonusPoints;
+    const totalPoints = bonusPointsRef.current;
+    const nextPointThreshold = Math.ceil(totalPoints);
+    
+    // Calculate percentage to next full point (0-100)
+    const fractionalPart = totalPoints - Math.floor(totalPoints);
+    return Math.min(fractionalPart * 100, 100);
+  }, [earnedBonusPoints]);
+
   return (
     <div className="container mx-auto px-4 py-6">
       <Toaster />
@@ -1121,7 +1210,14 @@ export default function VideoPage() {
                       <div className="rounded-full bg-green-100 px-3 py-1 text-sm text-green-800 flex items-center">
                         <span className="mr-1">Points earned</span>
                         <span className="inline-block w-1 h-1 rounded-full bg-green-800 mx-1"></span>
-                        <span>Continue for bonus points at {Math.floor(video.points_per_minute * 0.1)} pts/min</span>
+                        <span className="flex items-center">
+                          <span className="mr-1">Continue for bonus points</span>
+                          {isPlaying && (
+                            <span className="flex items-center animate-pulse bg-yellow-100 px-1.5 py-0.5 rounded-full text-xs text-yellow-800 ml-1">
+                              Earning {Math.floor(video.points_per_minute * 0.1)} pts/min
+                            </span>
+                          )}
+                        </span>
                       </div>
                     )}
                     
@@ -1265,4 +1361,4 @@ export default function VideoPage() {
       </div>
     </div>
   );
-} 
+}

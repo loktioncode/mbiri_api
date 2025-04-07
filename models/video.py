@@ -10,6 +10,7 @@ class VideoBase(BaseModel):
     title: str
     description: Optional[str] = None
     points_per_minute: int = 10  # Default points per minute
+    duration_seconds: Optional[int] = None  # Video duration in seconds
 
 
 class VideoCreate(VideoBase):
@@ -31,7 +32,7 @@ class VideoInDB(VideoBase):
 class Video(VideoBase):
     id: PyObjectId = Field(alias="_id")
     creator_id: PyObjectId
-    created_at: datetime
+    created_at: datetime = Field(default_factory=datetime.utcnow)
     youtube_url: HttpUrl = Field(None)
 
     def __init__(self, **data):

@@ -101,10 +101,10 @@ async def record_video_watch(
     """
     Record a video watch session and earn points (viewer only)
     
-    Points are only awarded if:
-    - The user is a viewer
-    - The user watches for at least 60 seconds (1 minute)
-    - The user has not previously earned points for this video
+    Points awarded in two ways:
+    - First-time viewers earn full points for watching at least 1 minute
+    - Returning viewers earn bonus points at 10% rate for continued watching
+    - No points are awarded once the video is fully watched
     """
     if current_user.user_type != "viewer":
         raise HTTPException(
@@ -112,7 +112,7 @@ async def record_video_watch(
             detail="Only viewers can earn points for watching videos"
         )
 
-    view_record, points_earned = await record_watch_session(
+    view_record, points_earned, already_earned = await record_watch_session(
         video_id,
         str(current_user.id),
         watch_duration
@@ -123,5 +123,8 @@ async def record_video_watch(
         "points_earned": points_earned,
         "watch_duration": watch_duration,
         "video_id": video_id,
-        "already_earned": points_earned == 0 and watch_duration >= 60
+        "already_earned": already_earned,
+        "fully_watched": getattr(view_record, "fully_watched", False),
+        "continuing_points": already_earned and points_earned > 0,
+        "total_points": getattr(view_record, "points_earned", 0) 
     }

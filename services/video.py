@@ -40,6 +40,7 @@ async def create_video(video_data: VideoCreate, creator: UserInDB) -> Video:
     video_dict = video_data.dict()
     video_dict["youtube_id"] = youtube_id
     video_dict["creator_id"] = ObjectId(creator.id)
+    video_dict["created_at"] = datetime.utcnow()
     
     # Insert into database
     result = await videos_collection.insert_one(video_dict)

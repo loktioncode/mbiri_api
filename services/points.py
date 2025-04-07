@@ -20,6 +20,9 @@ async def record_watch_session(
     Points are awarded at full rate for first-time viewers who watch at least 1 minute.
     Viewers who have already earned points for this video can earn additional points at 10% rate.
     No points are awarded when the video is fully watched.
+    
+    This function will always update the existing record if one exists,
+    rather than creating multiple records for the same user/video.
     """
     # Validate video exists
     video = await videos_collection.find_one({"_id": ObjectId(video_id)})
@@ -47,15 +50,14 @@ async def record_watch_session(
     # Get video length (defaults to 10 minutes = 600 seconds if not specified)
     video_length = video.get("duration_seconds", 600)
     
-    # Check if viewer has already watched the entire video
+    # Check if viewer has already watched the video (any amount)
     existing_view = await views_collection.find_one({
         "video_id": ObjectId(video_id),
         "viewer_id": ObjectId(viewer_id)
     })
     
-    fully_watched = False
-    if existing_view and existing_view.get("watch_duration", 0) >= video_length:
-        fully_watched = True
+    # If video is fully watched, no more points can be earned
+    if existing_view and existing_view.get("fully_watched", False):
         return ViewRecord(**{
             "_id": str(existing_view["_id"]),
             "video_id": str(existing_view["video_id"]),
@@ -65,105 +67,98 @@ async def record_watch_session(
             "created_at": existing_view["created_at"],
             "fully_watched": True
         }), 0, True
-        
-    # Calculate base points - users need to watch at least a minute to earn anything
-    points_earned = 0
     
-    # Only proceed if sufficient watch time
-    if watch_duration >= 60:  # 60 seconds = 1 minute
+    fully_watched = watch_duration >= video_length
+    points_earned = 0
+    already_earned = existing_view is not None and existing_view.get("points_earned", 0) > 0
+    
+    # Calculate points earned in this session
+    if watch_duration >= 60:  # Must watch at least 1 minute
         points_per_minute = video.get("points_per_minute", DEFAULT_POINTS_PER_MINUTE)
         
-        # Check if viewer has already earned points for this video
-        if existing_view and existing_view.get("points_earned", 0) > 0:
-            # Viewer already earned points - award at 10% rate for additional time
+        if existing_view:
+            # Get previous watch duration
             previous_duration = existing_view.get("watch_duration", 0)
             
-            # Only award points for additional time watched and if not fully watched
-            if watch_duration > previous_duration and watch_duration < video_length:
+            # Only award points for additional time if more time was watched
+            if watch_duration > previous_duration and not fully_watched:
                 additional_minutes = (watch_duration - previous_duration) / 60
-                # 10% of the points per minute for continued watching
-                points_earned = int((points_per_minute * 0.1) * additional_minutes)
                 
-                # Update the existing record with the new duration and additional points
-                if points_earned > 0:
-                    previous_points = existing_view.get("points_earned", 0)
-                    total_points = previous_points + points_earned
-                    
-                    # Update fully watched status if applicable
-                    fully_watched = watch_duration >= video_length
-                    
-                    await views_collection.update_one(
-                        {"_id": existing_view["_id"]},
-                        {"$set": {
-                            "watch_duration": watch_duration, 
-                            "points_earned": total_points,
-                            "fully_watched": fully_watched
-                        }}
-                    )
-                    
-                    # Update user's total points
-                    await users_collection.update_one(
-                        {"_id": ObjectId(viewer_id)},
-                        {"$inc": {"points": points_earned}}
-                    )
-                    
-                    # Return the updated record
-                    updated_view = await views_collection.find_one({"_id": existing_view["_id"]})
-                    if updated_view:
-                        updated_view["_id"] = str(updated_view["_id"])
-                        updated_view["video_id"] = str(updated_view["video_id"])
-                        updated_view["viewer_id"] = str(updated_view["viewer_id"])
-                        updated_view["fully_watched"] = fully_watched
-                        
-                        return ViewRecord(**updated_view), points_earned, True
-            
-            # If no additional points earned or no additional time watched
-            existing_view["_id"] = str(existing_view["_id"])
-            existing_view["video_id"] = str(existing_view["video_id"])
-            existing_view["viewer_id"] = str(existing_view["viewer_id"])
-            existing_view["fully_watched"] = watch_duration >= video_length
-            
-            # Update watch duration if it increased, even if no points awarded
-            if watch_duration > existing_view.get("watch_duration", 0):
-                await views_collection.update_one(
-                    {"_id": ObjectId(existing_view["_id"])},
-                    {"$set": {
-                        "watch_duration": watch_duration,
-                        "fully_watched": watch_duration >= video_length
-                    }}
-                )
-            
-            return ViewRecord(**existing_view), 0, True
+                # If they've earned points before, award at 10% rate
+                if already_earned:
+                    # 10% of the points per minute for continued watching
+                    points_earned = int((points_per_minute * 0.1) * additional_minutes)
+                else:
+                    # First time earning points - award full rate
+                    minutes_watched = watch_duration / 60
+                    points_earned = int(points_per_minute * minutes_watched)
         else:
-            # First time viewer - award full points
+            # First time watching - award full points
             minutes_watched = watch_duration / 60
             points_earned = int(points_per_minute * minutes_watched)
-            fully_watched = watch_duration >= video_length
-
-    # Create new view record
-    view_record = {
-        "video_id": ObjectId(video_id),
-        "viewer_id": ObjectId(viewer_id),
-        "watch_duration": watch_duration,
-        "points_earned": points_earned,
-        "created_at": datetime.utcnow(),
-        "fully_watched": fully_watched
-    }
-
-    # Insert view record
-    result = await views_collection.insert_one(view_record)
-    view_record["_id"] = str(result.inserted_id)
-    view_record["video_id"] = str(view_record["video_id"])
-    view_record["viewer_id"] = str(view_record["viewer_id"])
-
-    # Update viewer's points only if points were earned
+    
+    # Update user's total points if points were earned
     if points_earned > 0:
         await users_collection.update_one(
             {"_id": ObjectId(viewer_id)},
             {"$inc": {"points": points_earned}}
         )
+    
+    # Now handle record creation or update
+    if existing_view:
+        # Always update the existing record with the latest watch time
+        # and increment points_earned if applicable
+        total_points = existing_view.get("points_earned", 0) + points_earned
+        
+        update_fields = {
+            "watch_duration": max(watch_duration, existing_view.get("watch_duration", 0)),
+            "fully_watched": fully_watched
+        }
+        
+        # Only update points if new points were earned
+        if points_earned > 0:
+            update_fields["points_earned"] = total_points
+        
+        # Update the record
+        await views_collection.update_one(
+            {"_id": existing_view["_id"]},
+            {"$set": update_fields}
+        )
+        
+        # Get the updated record
+        updated_view = await views_collection.find_one({"_id": existing_view["_id"]})
+        if updated_view:
+            updated_view["_id"] = str(updated_view["_id"])
+            updated_view["video_id"] = str(updated_view["video_id"])
+            updated_view["viewer_id"] = str(updated_view["viewer_id"])
+            return ViewRecord(**updated_view), points_earned, already_earned
+        
+        # Fallback to existing view if we can't get the updated one
+        existing_view["_id"] = str(existing_view["_id"])
+        existing_view["video_id"] = str(existing_view["video_id"])
+        existing_view["viewer_id"] = str(existing_view["viewer_id"])
+        existing_view["watch_duration"] = max(watch_duration, existing_view.get("watch_duration", 0))
+        existing_view["points_earned"] = total_points if points_earned > 0 else existing_view.get("points_earned", 0)
+        existing_view["fully_watched"] = fully_watched
+        return ViewRecord(**existing_view), points_earned, already_earned
+    else:
+        # Create new view record for first-time viewers
+        view_record = {
+            "video_id": ObjectId(video_id),
+            "viewer_id": ObjectId(viewer_id),
+            "watch_duration": watch_duration,
+            "points_earned": points_earned,
+            "created_at": datetime.utcnow(),
+            "fully_watched": fully_watched
+        }
 
-    return ViewRecord(**view_record), points_earned, False  # False indicates first time earning
+        # Insert view record
+        result = await views_collection.insert_one(view_record)
+        view_record["_id"] = str(result.inserted_id)
+        view_record["video_id"] = str(view_record["video_id"])
+        view_record["viewer_id"] = str(view_record["viewer_id"])
+
+        return ViewRecord(**view_record), points_earned, False  # False indicates first time earning
 
 
 async def get_user_points(user_id: str) -> Dict[str, Any]:
