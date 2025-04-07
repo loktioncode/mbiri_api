@@ -352,21 +352,60 @@ export default function VideoPage() {
       // Only start the timer if the video is playing
       if (isPlaying) {
         console.log('Starting timer - video is playing');
-        watchTimeIntervalRef.current = setInterval(() => {
-          setWatchTime(prev => {
-            const newWatchTime = prev + 1;
-            
-            // Only trigger report at 60-second mark to create initial record
-            if (newWatchTime === 60 && !alreadyEarnedForThisVideo && !hasEarnedPoints) {
-              console.log('Hit 60 seconds, triggering initial point earning report');
-              handleReportWatchTime();
+        
+        // Explicitly check YouTube player state before starting the timer
+        const checkActualPlayState = () => {
+          try {
+            if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+              const playerState = playerRef.current.getPlayerState();
+              
+              // YT.PlayerState.PLAYING = 1
+              if (playerState !== 1) {
+                console.log(`YouTube player not actually playing (state=${playerState}), stopping timer`);
+                setIsPlaying(false);
+                return false;
+              }
+              return true;
+            }
+          } catch (error) {
+            console.error('Error checking player state:', error);
+          }
+          // If we can't check the state or player isn't ready, DON'T start timer
+          return false;
+        };
+        
+        // Only proceed if player is truly playing
+        if (checkActualPlayState()) {
+          watchTimeIntervalRef.current = setInterval(() => {
+            // Double-check player state on each tick
+            if (!checkActualPlayState()) {
+              // If player is paused, clear the interval
+              if (watchTimeIntervalRef.current) {
+                clearInterval(watchTimeIntervalRef.current);
+                watchTimeIntervalRef.current = null;
+              }
+              return;
             }
             
-            watchTimeRef.current = newWatchTime; // Keep a ref for other components to access
-            return newWatchTime;
-          });
-          lastActivityTime.current = Date.now(); // Update last activity
-        }, 1000);
+            setWatchTime(prev => {
+              const newWatchTime = prev + 1;
+              
+              // Only trigger report at 60-second mark to create initial record
+              if (newWatchTime === 60 && !alreadyEarnedForThisVideo && !hasEarnedPoints) {
+                console.log('Hit 60 seconds, triggering initial point earning report');
+                handleReportWatchTime();
+              }
+              
+              watchTimeRef.current = newWatchTime; // Keep a ref for other components to access
+              return newWatchTime;
+            });
+            lastActivityTime.current = Date.now(); // Update last activity
+          }, 1000);
+        } else {
+          console.log('Not starting timer - YouTube player is not actually playing');
+          // Force isPlaying to match actual player state
+          setIsPlaying(false);
+        }
       } else {
         console.log('Timer paused - video is not playing');
       }
@@ -454,6 +493,32 @@ export default function VideoPage() {
   // Modify handleReportWatchTime to use the watchTime state with throttling
   const handleReportWatchTime = async () => {
     if (!(user?.user_type === 'viewer') || !video) return;
+    
+    // Only report if the video is actually playing
+    try {
+      let isCurrentlyPlaying = isPlaying;
+      
+      // Double-check with the actual player state
+      if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+        const actualState = playerRef.current.getPlayerState();
+        
+        // YT.PlayerState.PLAYING = 1
+        if (actualState !== 1 && isCurrentlyPlaying) {
+          console.log(`Player says it's not playing (state=${actualState}), but our state says it is. Syncing state.`);
+          setIsPlaying(false);
+          isCurrentlyPlaying = false;
+        }
+      }
+      
+      // Skip reporting if player is not active
+      if (!isCurrentlyPlaying && !fullyWatched) {
+        console.log('Skipping report - video is not actively playing');
+        return;
+      }
+    } catch (error) {
+      console.error('Error checking player state:', error);
+      // Continue with report even if we can't check player state
+    }
     
     // Check if enough time has passed since last report (minimum 30 seconds between reports)
     const now = Date.now();
@@ -658,6 +723,9 @@ export default function VideoPage() {
       if (!iframeRef.current || !iframeRef.current.id) return;
       
       try {
+        // Start with paused state to prevent timer starting before we check state
+        setIsPlaying(false);
+        
         const player = new window.YT.Player(iframeRef.current.id, {
           events: {
             'onReady': onPlayerReady,
@@ -665,6 +733,28 @@ export default function VideoPage() {
           }
         });
         playerRef.current = player;
+        
+        // Add a state verification interval
+        const stateVerificationInterval = setInterval(() => {
+          try {
+            if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+              const playerState = playerRef.current.getPlayerState();
+              const actuallyPlaying = playerState === 1; // YT.PlayerState.PLAYING = 1
+              
+              if (isPlaying !== actuallyPlaying) {
+                console.log(`Detected state mismatch: our state=${isPlaying}, player state=${playerState}`);
+                setIsPlaying(actuallyPlaying);
+              }
+            }
+          } catch (error) {
+            console.error('Error in state verification interval:', error);
+          }
+        }, 2000); // Check every 2 seconds
+        
+        // Clean up interval on unmount
+        return () => {
+          clearInterval(stateVerificationInterval);
+        };
       } catch (error) {
         console.error('Error initializing YouTube player:', error);
       }
@@ -714,6 +804,13 @@ export default function VideoPage() {
           }
         }
         
+        // Check initial player state
+        const initialPlayerState = event.target.getPlayerState();
+        console.log(`Initial player state: ${initialPlayerState}`);
+        
+        // Only set to playing if actually playing (1)
+        setIsPlaying(initialPlayerState === 1);
+        
         // Seek to the saved time position if available
         const savedTime = getWatchTime(videoId);
         if (savedTime > 0) {
@@ -745,27 +842,37 @@ export default function VideoPage() {
           console.log('Video started playing');
           setIsPlaying(true);
         }
-      } else if (playerState === 2) {
-        // Only change state if actually changing from playing to paused
+      } else if (playerState === 2 || playerState === 0) {
+        // Paused or ended - stop timer immediately
         if (isPlaying) {
-          console.log('Video paused');
+          console.log('Video paused or ended');
           setIsPlaying(false);
+          
+          // Immediately stop the timer
+          if (watchTimeIntervalRef.current) {
+            clearInterval(watchTimeIntervalRef.current);
+            watchTimeIntervalRef.current = null;
+          }
 
-          // When paused, consider saving watch progress but don't report to API
+          // When paused, save watch progress but don't report to API
           // to avoid excessive API calls
           saveWatchTime(videoId, watchTime);
+          
+          // If video ended, report final watch time
+          if (playerState === 0) {
+            console.log('Video ended, reporting final watch time');
+            
+            // Only make API call if enough time has passed since last report
+            const now = Date.now();
+            if (now - lastReportTimeRef.current >= 30000) {
+              handleReportWatchTime();
+              lastReportTimeRef.current = now;
+            }
+          }
         }
-      } else if (playerState === 0) {
-        // Video ended - report final watch time
-        console.log('Video ended, reporting final watch time');
-        setIsPlaying(false);
-        
-        // Only make API call if enough time has passed since last report
-        const now = Date.now();
-        if (now - lastReportTimeRef.current >= 30000) {
-          handleReportWatchTime();
-          lastReportTimeRef.current = now;
-        }
+      } else if (playerState === 3) {
+        // Buffering - let's not change the play state to avoid flickering
+        console.log('Video buffering');
       }
     };
     
@@ -969,6 +1076,67 @@ export default function VideoPage() {
     
     return false;
   };
+
+  // Add effect to handle document visibility changes
+  useEffect(() => {
+    if (!user || !videoData) return;
+    
+    // Handler for when page visibility changes
+    const handleVisibilityChange = () => {
+      console.log(`Document visibility changed: ${document.visibilityState}`);
+      
+      if (document.visibilityState === 'hidden') {
+        // Page is not visible, pause the timer and video if playing
+        if (isPlaying) {
+          console.log('Page hidden, pausing video and timer');
+          
+          // Try to pause the video player
+          try {
+            if (playerRef.current && typeof playerRef.current.pauseVideo === 'function') {
+              playerRef.current.pauseVideo();
+            }
+          } catch (error) {
+            console.error('Error pausing video on visibility change:', error);
+          }
+          
+          // Force isPlaying to false and clear timer
+          setIsPlaying(false);
+          if (watchTimeIntervalRef.current) {
+            clearInterval(watchTimeIntervalRef.current);
+            watchTimeIntervalRef.current = null;
+          }
+          
+          // Save current progress
+          saveWatchTime(videoId, watchTime);
+        }
+      } else if (document.visibilityState === 'visible') {
+        // When page becomes visible again, check actual player state
+        try {
+          if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+            const playerState = playerRef.current.getPlayerState();
+            
+            // Synchronize our state with actual player state
+            // YT.PlayerState.PLAYING = 1
+            const actuallyPlaying = playerState === 1;
+            if (isPlaying !== actuallyPlaying) {
+              console.log(`Syncing play state with YouTube player: ${actuallyPlaying ? 'playing' : 'paused'}`);
+              setIsPlaying(actuallyPlaying);
+            }
+          }
+        } catch (error) {
+          console.error('Error checking player state on visibility change:', error);
+        }
+      }
+    };
+    
+    // Add visibility change listener
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Clean up
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user, videoData, isPlaying, videoId, watchTime]);
 
   return (
     <div className="container mx-auto px-4 py-6">
@@ -1213,7 +1381,7 @@ export default function VideoPage() {
                       <div className="flex items-center bg-yellow-100 px-2 py-1 rounded text-xs text-yellow-800 animate-pulse">
                         <svg className="h-3 w-3 text-yellow-500 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
                           <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z" />
-                          <path d="M10 5a1 1 0 00-1 1v4a1 1 0 00.293.707l2.5 2.5a1 1 0 001.414-1.414L10.5 9.5V6a1 1 0 00-1-1z" />
+                          <path d="M10 5a1 1 0 00-1 1v4.5a1 1 0 00.293.707l2.5 2.5a1 1 0 001.414-1.414L10.5 9.5V6a1 1 0 00-1-1z" />
                         </svg>
                         Currently earning 1 pt/min
                       </div>
