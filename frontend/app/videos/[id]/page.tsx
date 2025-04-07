@@ -1029,7 +1029,7 @@ export default function VideoPage() {
     <div className="container mx-auto px-4 py-6">
       <Toaster />
       
-      <div className="mb-4">
+      <div className="mb-0">
         <button 
           onClick={() => router.back()}
           className="cursor-pointer inline-flex items-center text-indigo-600 hover:text-indigo-800 transition-colors"
@@ -1046,11 +1046,9 @@ export default function VideoPage() {
             
             {video && (
               <div className="mb-3">
-                <h1 className="text-2xl font-bold text-gray-900">{video.title}</h1>
+                {/* <h1 className="text-2xl font-bold text-gray-900">{video.title}</h1> */}
                 <div className="flex items-center text-sm text-gray-500 mt-1">
-                  <span>By {video.creator_username}</span>
-                  <span className="mx-2">•</span>
-                  <span>{formatDuration(video.duration_seconds)}</span>
+                
                   {user?.user_type === 'viewer' && fullyWatched && (
                     <>
                       <span className="mx-2">•</span>
@@ -1066,7 +1064,7 @@ export default function VideoPage() {
               </div>
             )}
             
-            <div className="w-full aspect-video bg-black rounded-lg overflow-hidden shadow-lg sticky top-4 relative">
+            <div className="w-full aspect-video bg-black rounded-lg overflow-hidden shadow-lg sticky top-2 relative">
               {videoLoading ? (
                 <div className="w-full h-full flex items-center justify-center">
                   <div className="animate-pulse">Loading video...</div>
@@ -1298,6 +1296,18 @@ export default function VideoPage() {
           )}
         </div>
         
+
+        {video && (
+              <div className="mb-3">
+                <h1 className="text-2xl font-bold text-gray-900">{video.title}</h1>
+                <div className="flex items-center text-sm text-gray-500 mt-1">
+                  <span>By {video.creator_username}</span>
+                  <span className="mx-2">•</span>
+                  <span>{formatDuration(video.duration_seconds)}</span>
+                 
+                </div>
+              </div>
+            )}
         <div className="w-full">
           <div className="bg-white rounded-lg p-4 shadow-lg">
             <h2 className="text-xl font-semibold mb-4">More Videos</h2>
