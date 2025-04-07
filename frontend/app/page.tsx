@@ -6,7 +6,7 @@ import { PlayIcon } from '@heroicons/react/24/solid';
 import { UserPlusIcon } from '@heroicons/react/24/outline';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { useState, useRef, useEffect } from 'react';
+import { useEffect } from 'react';
 
 interface Video {
   _id: string;
@@ -47,11 +47,6 @@ export default function Home() {
     queryFn: fetchVideos,
   });
   const { user } = useAuth();
-  const [previewVideo, setPreviewVideo] = useState<string | null>(null);
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0 });
-  const playerRef = useRef<{ [key: string]: any }>({});
-  const previewTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Load YouTube API
   useEffect(() => {
@@ -64,68 +59,6 @@ export default function Home() {
       }
     }
   }, [videos]);
-  
-  // Handle mouse enter on video card
-  const handleMouseEnter = (videoId: string, event: React.MouseEvent) => {
-    // Clear any existing timeout
-    if (previewTimeoutRef.current) {
-      clearTimeout(previewTimeoutRef.current);
-    }
-    
-    // Set a timeout before showing preview to avoid flickering on quick mouse movements
-    previewTimeoutRef.current = setTimeout(() => {
-      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-      setPreviewPosition({
-        x: rect.left + window.scrollX,
-        y: rect.bottom + window.scrollY + 10
-      });
-      setPreviewVideo(videoId);
-      setShowPreview(true);
-      
-      // Initialize player if YouTube API is loaded
-      if (window.YT && window.YT.Player) {
-        // Wait for the iframe to be in the DOM
-        setTimeout(() => {
-          const iframe = document.getElementById(`preview-${videoId}`);
-          if (iframe && !playerRef.current[videoId]) {
-            try {
-              playerRef.current[videoId] = new window.YT.Player(`preview-${videoId}`, {
-                events: {
-                  'onReady': (event: any) => {
-                    event.target.mute(); // Always mute previews
-                    event.target.playVideo();
-                  }
-                }
-              });
-            } catch (error) {
-              console.error('Failed to initialize YouTube preview player', error);
-            }
-          } else if (playerRef.current[videoId]) {
-            playerRef.current[videoId].playVideo();
-          }
-        }, 100);
-      }
-    }, 500); // 500ms delay before showing preview
-  };
-  
-  // Handle mouse leave on video card
-  const handleMouseLeave = () => {
-    if (previewTimeoutRef.current) {
-      clearTimeout(previewTimeoutRef.current);
-      previewTimeoutRef.current = null;
-    }
-    
-    if (previewVideo && playerRef.current[previewVideo]) {
-      try {
-        playerRef.current[previewVideo].pauseVideo();
-      } catch (error) {
-        console.error('Failed to pause preview video', error);
-      }
-    }
-    
-    setShowPreview(false);
-    setPreviewVideo(null);
-  };
 
   if (isLoading) {
     return (
@@ -186,26 +119,39 @@ export default function Home() {
           <div
             key={video._id}
             className="group overflow-hidden rounded-lg bg-white shadow-lg transition-transform hover:scale-105"
-            onMouseEnter={(e) => handleMouseEnter(video.youtube_id, e)}
-            onMouseLeave={handleMouseLeave}
           >
-            <Link href={`/videos/${video._id}`}>
-              <div className="relative">
-                <img
-                  src={`https://img.youtube.com/vi/${video.youtube_id}/maxresdefault.jpg`}
-                  alt={video.title}
-                  className="h-48 w-full object-cover"
-                />
-                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 transition-opacity group-hover:bg-opacity-50">
-                  <PlayIcon className="h-16 w-16 text-white opacity-0 transition-opacity group-hover:opacity-100" />
-                </div>
-                {video.duration_seconds && (
-                  <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
-                    {formatDuration(video.duration_seconds)}
+            <div className="relative h-48">
+              {/* Video preview - autoplaying but muted */}
+              <iframe
+                src={`https://www.youtube.com/embed/${video.youtube_id}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&loop=1&playlist=${video.youtube_id}&start=5&end=15`}
+                title={video.title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                className="absolute inset-0 w-full h-full"
+              ></iframe>
+              
+              {/* Click overlay to go to video page */}
+              <Link href={`/videos/${video._id}`} className="absolute inset-0 z-10">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/40 transition-colors">
+                  <div className="bg-indigo-600/80 hover:bg-indigo-700/90 rounded-full p-4 flex items-center justify-center transition-all">
+                    <PlayIcon className="h-8 w-8 text-white" />
                   </div>
-                )}
+                </div>
+              </Link>
+              
+              {/* Watch full video label */}
+              <div className="absolute bottom-8 left-0 right-0 flex justify-center z-20">
+                <div className="bg-black/60 text-white text-xs px-3 py-1 rounded-full">
+                  Click to watch full video
+                </div>
               </div>
-            </Link>
+              
+              {/* Duration badge */}
+              {video.duration_seconds && (
+                <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded z-20">
+                  {formatDuration(video.duration_seconds)}
+                </div>
+              )}
+            </div>
             <div className="p-4">
               <Link href={`/videos/${video._id}`}>
                 <h2 className="mb-2 text-lg font-semibold text-gray-900 hover:text-indigo-600">
@@ -233,32 +179,6 @@ export default function Home() {
           </div>
         ))}
       </div>
-      
-      {/* Video Preview Popup */}
-      {showPreview && previewVideo && (
-        <div 
-          className="fixed z-50 shadow-2xl rounded-lg overflow-hidden animate-fade-in"
-          style={{
-            top: `${previewPosition.y}px`,
-            left: `${previewPosition.x}px`,
-            transform: 'translateX(-50%)',
-            width: '320px',
-            height: '180px'
-          }}
-        >
-          <iframe
-            id={`preview-${previewVideo}`}
-            src={`https://www.youtube.com/embed/${previewVideo}?autoplay=1&mute=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&modestbranding=1&showinfo=0&controls=0&start=5`}
-            title="Video preview"
-            allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-            className="w-full h-full"
-          ></iframe>
-          <div className="absolute top-0 left-0 w-full h-full pointer-events-none bg-gradient-to-t from-black/40 to-transparent" />
-          <div className="absolute bottom-2 left-2 text-white text-xs bg-black/50 px-2 py-1 rounded">
-            Preview • Hover to watch
-          </div>
-        </div>
-      )}
     </div>
   );
 }
