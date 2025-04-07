@@ -261,6 +261,9 @@ export default function VideoPage() {
   // Progress tracking
   const [progress, setProgress] = useState(0);
 
+  // Add a state variable to track the actual player state
+  const [playerState, setPlayerState] = useState<number>(0);
+
   const { data: videoData, isLoading: videoLoading, error: videoError } = useQuery<Video>({
     queryKey: ['video', videoId],
     queryFn: () => fetchVideo(videoId),
@@ -352,84 +355,24 @@ export default function VideoPage() {
     }
   };
   
-  // Track watch time and report to API
+  // Track watch time and report to API - only for logged-in viewers
   useEffect(() => {
-    if (user?.user_type === 'viewer' && videoData && isVideoMounted) {
-      // Clear any existing interval
+    // Skip all tracking for guest users
+    if (user?.user_type !== 'viewer' || !videoData || !isVideoMounted) return;
+
+    // Clear any existing interval
+    if (watchTimeIntervalRef.current) {
+      clearInterval(watchTimeIntervalRef.current);
+      watchTimeIntervalRef.current = null;
+    }
+    
+    return () => {
       if (watchTimeIntervalRef.current) {
         clearInterval(watchTimeIntervalRef.current);
         watchTimeIntervalRef.current = null;
       }
-      
-      // Only start the timer if the video is playing
-      if (isPlaying) {
-        console.log('Starting timer - video is playing');
-        
-        // Explicitly check YouTube player state before starting the timer
-        const checkActualPlayState = () => {
-          try {
-            if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
-              const playerState = playerRef.current.getPlayerState();
-              
-              // YT.PlayerState.PLAYING = 1
-              if (playerState !== 1) {
-                console.log(`YouTube player not actually playing (state=${playerState}), stopping timer`);
-                setIsPlaying(false);
-                return false;
-              }
-              return true;
-            }
-          } catch (error) {
-            console.error('Error checking player state:', error);
-          }
-          // If we can't check the state or player isn't ready, DON'T start timer
-          return false;
-        };
-        
-        // Only proceed if player is truly playing
-        if (checkActualPlayState()) {
-          watchTimeIntervalRef.current = setInterval(() => {
-            // Double-check player state on each tick
-            if (!checkActualPlayState()) {
-              // If player is paused, clear the interval
-              if (watchTimeIntervalRef.current) {
-                clearInterval(watchTimeIntervalRef.current);
-                watchTimeIntervalRef.current = null;
-              }
-              return;
-            }
-            
-            setWatchTime(prev => {
-              const newWatchTime = prev + 1;
-              
-              // Only trigger report at 60-second mark to create initial record
-              if (newWatchTime === 60 && !alreadyEarnedForThisVideo && !hasEarnedPoints) {
-                console.log('Hit 60 seconds, triggering initial point earning report');
-                handleReportWatchTime();
-              }
-              
-              watchTimeRef.current = newWatchTime; // Keep a ref for other components to access
-              return newWatchTime;
-            });
-            lastActivityTime.current = Date.now(); // Update last activity
-          }, 1000);
-        } else {
-          console.log('Not starting timer - YouTube player is not actually playing');
-          // Force isPlaying to match actual player state
-          setIsPlaying(false);
-        }
-      } else {
-        console.log('Timer paused - video is not playing');
-      }
-      
-      return () => {
-        if (watchTimeIntervalRef.current) {
-          clearInterval(watchTimeIntervalRef.current);
-          watchTimeIntervalRef.current = null;
-        }
-      };
-    }
-  }, [user, videoData, isPlaying, isVideoMounted, videoId, hasEarnedPoints, alreadyEarnedForThisVideo, fullyWatched]);
+    };
+  }, [user, videoData, isVideoMounted, videoId]);
   
   // Reset state when video changes
   useEffect(() => {
@@ -664,45 +607,81 @@ export default function VideoPage() {
     }
   };
 
-  // Handle play/pause button click
-  const handlePlayPauseClick = () => {
-    try {
-      // Use the stored player reference if available
-      if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
-        const playerState = playerRef.current.getPlayerState();
-        // YT.PlayerState.PLAYING = 1, YT.PlayerState.PAUSED = 2
-        if (playerState === 1) {
-          playerRef.current.pauseVideo();
-        } else {
-          playerRef.current.playVideo();
-        }
-        return; // Let the state update come from the player state change event
+  // Update the onPlayerStateChange handler to track the actual state
+  const onPlayerStateChange = (event: any) => {
+    const newState = event.data;
+    setPlayerState(newState);
+    
+    // YT.PlayerState.PLAYING = 1, YT.PlayerState.PAUSED = 2, YT.PlayerState.ENDED = 0
+    if (newState === 1) {
+      // Video is playing
+      setIsPlaying(true);
+      // Start timer
+      if (watchTimeIntervalRef.current) {
+        clearInterval(watchTimeIntervalRef.current);
       }
-      
-      // Fallback to YouTube iframe API if playerRef is not available
-      if (window.YT && iframeRef.current && iframeRef.current.id) {
-        const player = window.YT.get(iframeRef.current.id);
-        if (player) {
-          // If currently playing, pause it
-          if (isPlaying) {
-            player.pauseVideo();
-          } else {
-            // If paused, play it
-            player.playVideo();
-          }
-          return; // Let the state update come from the player state change event
+      watchTimeIntervalRef.current = setInterval(() => {
+        setWatchTime(prev => {
+          const newTime = prev + 1;
+          watchTimeRef.current = newTime;
+          return newTime;
+        });
+      }, 1000);
+    } else if (newState === 2 || newState === 0) {
+      // Video is paused or ended
+      setIsPlaying(false);
+      // Stop timer
+      if (watchTimeIntervalRef.current) {
+        clearInterval(watchTimeIntervalRef.current);
+        watchTimeIntervalRef.current = null;
+      }
+    }
+  };
+
+  // Fix the onPlayerReady handler
+  const onPlayerReady = (event: any) => {
+    if (user?.user_type === 'viewer') {
+      try {
+        // First, ensure timer is stopped and state is reset
+        if (watchTimeIntervalRef.current) {
+          clearInterval(watchTimeIntervalRef.current);
+          watchTimeIntervalRef.current = null;
         }
+        setIsPlaying(false);
+
+        const duration = event.target.getDuration();
+        if (duration && !isNaN(duration) && duration > 0) {
+          setVideo(prev => prev ? { ...prev, duration_seconds: duration } : null);
+          updateVideoDuration(videoId, duration);
+        }
+        
+        // Seek to saved watch time or 0
+        const savedWatchTime = getWatchTime(videoId);
+        if (savedWatchTime > 0) {
+          event.target.seekTo(savedWatchTime);
+          setWatchTime(savedWatchTime);
+          // Ensure video is paused
+          event.target.pauseVideo();
+        } else {
+          event.target.seekTo(0);
+          setWatchTime(0);
+          // Ensure video is paused
+          event.target.pauseVideo();
+        }
+      } catch (error) {
+        console.error('Error getting video duration:', error);
+      }
+    }
+  };
+
+  // Add a play button click handler
+  const handlePlayClick = () => {
+    try {
+      if (playerRef.current && typeof playerRef.current.playVideo === 'function') {
+        playerRef.current.playVideo();
       }
     } catch (error) {
-      console.error('Error controlling YouTube player:', error);
-    }
-    
-    // Fallback if we couldn't control the player directly
-    setIsPlaying(!isPlaying);
-    
-    // Try to focus the iframe to ensure events work
-    if (iframeRef.current) {
-      iframeRef.current.focus();
+      console.error('Error playing video:', error);
     }
   };
 
@@ -774,195 +753,48 @@ export default function VideoPage() {
     }
   }, [videoData, videoId, user]);
 
-  // Setup YouTube iframe API and get video duration
+  // Fix the cleanup function in the YouTube API initialization
   useEffect(() => {
     if (!videoData || !iframeRef.current || !isVideoMounted) return;
     
-    console.log("Setting up YouTube iframe API for video:", videoData.youtube_id);
-    
-    // Load YouTube API if not already loaded
     const loadYouTubeAPI = () => {
       if (!window.YT) {
-        console.log("Loading YouTube iframe API script");
         const tag = document.createElement('script');
         tag.src = 'https://www.youtube.com/iframe_api';
         const firstScriptTag = document.getElementsByTagName('script')[0];
-        if (firstScriptTag && firstScriptTag.parentNode) {
+        if (firstScriptTag?.parentNode) {
           firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
         }
-        
         window.onYouTubeIframeAPIReady = initializePlayer;
       } else if (window.YT.Player) {
-        console.log("YouTube API already loaded, initializing player");
         initializePlayer();
       }
     };
     
-    // Initialize the player once API is ready
     const initializePlayer = () => {
-      if (!iframeRef.current || !iframeRef.current.id) return;
+      if (!iframeRef.current?.id) return;
       
       try {
-        // Start with paused state to prevent timer starting before we check state
-        setIsPlaying(false);
-        
         const player = new window.YT.Player(iframeRef.current.id, {
           events: {
-            'onReady': onPlayerReady,
-            'onStateChange': onPlayerStateChange
+            onReady: onPlayerReady,
+            onStateChange: onPlayerStateChange
           }
         });
         playerRef.current = player;
-        
-        // Add a state verification interval
-        const stateVerificationInterval = setInterval(() => {
-          try {
-            if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
-              const playerState = playerRef.current.getPlayerState();
-              const actuallyPlaying = playerState === 1; // YT.PlayerState.PLAYING = 1
-              
-              if (isPlaying !== actuallyPlaying) {
-                console.log(`Detected state mismatch: our state=${isPlaying}, player state=${playerState}`);
-                setIsPlaying(actuallyPlaying);
-              }
-            }
-          } catch (error) {
-            console.error('Error in state verification interval:', error);
-          }
-        }, 2000); // Check every 2 seconds
-        
-        // Clean up interval on unmount
-        return () => {
-          clearInterval(stateVerificationInterval);
-        };
       } catch (error) {
         console.error('Error initializing YouTube player:', error);
-      }
-    };
-    
-    // Handle player ready event
-    const onPlayerReady = (event: any) => {
-      console.log('YouTube player ready');
-      
-      // Get video duration
-      try {
-        const duration = event.target.getDuration();
-        if (duration && !isNaN(duration) && duration > 0) {
-          console.log(`Video duration from YouTube: ${duration} seconds`);
-          
-          // Update video object with duration
-          setVideo(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              duration_seconds: duration
-            };
-          });
-          
-          // Update the video duration in the backend
-          updateVideoDuration(videoId, duration)
-            .then(result => {
-              console.log("Video duration update result:", result);
-            })
-            .catch(error => {
-              console.error("Error updating video duration:", error);
-            });
-          
-          // Report the initial duration to the backend ONLY ONCE
-          // This creates the view record with the correct duration right away
-          if (user?.user_type === 'viewer' && !watchSessionStarted) {
-            console.log(`Reporting initial video duration: ${duration} seconds`);
-            // Use minimal watch time (1 second) to avoid awarding points but create the record
-            recordWatchSession(videoId, 1)
-              .then(result => {
-                console.log("Initial watch session recorded with duration:", result);
-                setWatchSessionStarted(true);
-              })
-              .catch(error => {
-                console.error("Error reporting initial duration:", error);
-              });
-          }
-        }
-        
-        // Check initial player state
-        const initialPlayerState = event.target.getPlayerState();
-        console.log(`Initial player state: ${initialPlayerState}`);
-        
-        // Only set to playing if actually playing (1)
-        setIsPlaying(initialPlayerState === 1);
-        
-        // Seek to the saved time position if available
-        const savedTime = getWatchTime(videoId);
-        if (savedTime > 0) {
-          console.log(`Seeking to saved time: ${savedTime} seconds`);
-          // Seek to saved position
-          event.target.seekTo(savedTime);
-          // Ensure video plays after seeking
-          setTimeout(() => {
-            if (event.target && typeof event.target.playVideo === 'function') {
-              event.target.playVideo();
-              setWatchTime(savedTime);
-            }
-          }, 500);
-        }
-      } catch (error) {
-        console.error('Error getting video duration or seeking:', error);
-      }
-    };
-    
-    // Handle player state changes
-    const onPlayerStateChange = (event: any) => {
-      const playerState = event.data;
-      
-      // YT.PlayerState.PLAYING = 1, YT.PlayerState.PAUSED = 2
-      // YT.PlayerState.ENDED = 0, YT.PlayerState.BUFFERING = 3
-      if (playerState === 1) {
-        // Only change state if actually changing from paused to playing
-        if (!isPlaying) {
-          console.log('Video started playing');
-          setIsPlaying(true);
-        }
-      } else if (playerState === 2 || playerState === 0) {
-        // Paused or ended - stop timer immediately
-        if (isPlaying) {
-          console.log('Video paused or ended');
-          setIsPlaying(false);
-          
-          // Immediately stop the timer
-          if (watchTimeIntervalRef.current) {
-            clearInterval(watchTimeIntervalRef.current);
-            watchTimeIntervalRef.current = null;
-          }
-
-          // When paused, save watch progress but don't report to API
-          // to avoid excessive API calls
-          saveWatchTime(videoId, watchTime);
-          
-          // If video ended, report final watch time
-          if (playerState === 0) {
-            console.log('Video ended, reporting final watch time');
-            
-            // Only make API call if enough time has passed since last report
-            const now = Date.now();
-            if (now - lastReportTimeRef.current >= 30000) {
-              handleReportWatchTime();
-              lastReportTimeRef.current = now;
-            }
-          }
-        }
-      } else if (playerState === 3) {
-        // Buffering - let's not change the play state to avoid flickering
-        console.log('Video buffering');
       }
     };
     
     loadYouTubeAPI();
     
     return () => {
-      // Clean up
-      window.onYouTubeIframeAPIReady = function() {};
+      if (typeof window !== 'undefined') {
+        window.onYouTubeIframeAPIReady = () => {};
+      }
     };
-  }, [videoData, isVideoMounted, user, videoId, watchTime, isPlaying, watchSessionStarted]);
+  }, [videoData, isVideoMounted, user, videoId]);
 
   // Save watch time to localStorage periodically and when component unmounts
   useEffect(() => {
@@ -1078,9 +910,6 @@ export default function VideoPage() {
         </div>
       );
     }
-    
-   
-    
     return null;
   };
 
@@ -1207,7 +1036,6 @@ export default function VideoPage() {
     <div className="container mx-auto px-4 py-6">
       <Toaster />
       
-      {/* Back button */}
       <div className="mb-4">
         <button 
           onClick={() => router.back()}
@@ -1218,42 +1046,11 @@ export default function VideoPage() {
         </button>
       </div>
       
-      {/* Sign up prompt for non-logged in users */}
-      {!user && (
-        <div className="mb-6 bg-indigo-50 border border-indigo-100 rounded-lg p-4">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm-2.625 6c-.54 0-.828.419-.936.634a1.96 1.96 0 00-.189.866c0 .298.059.605.189.866.108.215.395.634.936.634.54 0 .828-.419.936-.634.13-.26.189-.568.189-.866 0-.298-.059-.605-.189-.866-.108-.215-.395-.634-.936-.634zm4.5 0c-.54 0-.828.419-.936.634a1.96 1.96 0 00-.189.866c0 .298.059.605.189.866.108.215.395.634.936.634.54 0 .828-.419.936-.634.13-.26.189-.568.189-.866 0-.298-.059-.605-.189-.866-.108-.215-.395-.634-.936-.634zm-2.625 7.292c-.54 0-.828.419-.936.634a1.96 1.96 0 00-.189.866c0 .298.059.605.189.866.108.215.395.634.936.634.54 0 .828-.419.936-.634.13-.26.189-.568.189-.866 0-.298-.059-.605-.189-.866-.108-.215-.395-.634-.936-.634z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3 flex-1">
-              <h3 className="text-sm font-medium text-indigo-800">Sign up to earn points!</h3>
-              <p className="mt-1 text-sm text-indigo-600">
-                Create an account to earn {video?.points_per_minute || 'bonus'} points for your first minute of watching, plus 1 point per minute after that.
-              </p>
-            </div>
-            <div className="ml-6">
-              <Link
-                href="/register"
-                className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-              >
-                Sign up now
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Main content area with video player and tracker side by side */}
       <div className="flex flex-col space-y-8">
-        {/* Video player and tracker side by side */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-          {/* Video player - 3/4 width on large screens */}
-          <div className="lg:col-span-3 w-full">
-            {renderWarningBanner()}
+          <div className={`${user?.user_type === 'viewer' ? 'lg:col-span-3' : 'lg:col-span-4'} w-full`}>
+            {user?.user_type === 'viewer' && renderWarningBanner()}
             
-            {/* Video title above player */}
             {video && (
               <div className="mb-3">
                 <h1 className="text-2xl font-bold text-gray-900">{video.title}</h1>
@@ -1294,73 +1091,19 @@ export default function VideoPage() {
                     title={video.title}
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
-                    className={`w-full h-full ${fullyWatched ? 'opacity-75' : ''}`}
-                  ></iframe>
-                  
-                  {/* Only show pause overlay for logged-in users when the video is paused */}
-                  {!isPlaying && user?.user_type === 'viewer' && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                      <div className="text-white text-lg font-semibold z-10 bg-black/50 px-4 py-2 rounded">
-                        {fullyWatched 
-                          ? 'Video paused - Fully watched'
-                          : watchTime < 60 && !hasEarnedPoints && !alreadyEarnedForThisVideo
-                            ? 'Video paused - Watch 1 minute to earn points'
-                            : 'Video paused - Timer paused'
-                        }
-                      </div>
-                      <img 
-                        src={`https://img.youtube.com/vi/${video.youtube_id}/hqdefault.jpg`} 
-                        alt="Video Thumbnail" 
-                        className="absolute inset-0 w-full h-full object-cover opacity-50 z-0" 
-                      />
-                    </div>
-                  )}
-                  
-                  {/* Guest user overlay - shown only when paused and not logged in */}
-                  {!isPlaying && !user && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                      <div className="text-white text-lg font-semibold z-10 bg-black/50 px-4 py-2 rounded">
-                        Sign up to track your progress and earn points!
-                      </div>
-                      <img 
-                        src={`https://img.youtube.com/vi/${video.youtube_id}/hqdefault.jpg`} 
-                        alt="Video Thumbnail" 
-                        className="absolute inset-0 w-full h-full object-cover opacity-50 z-0" 
-                      />
-                    </div>
-                  )}
-                  
-                  {/* Fully watched overlay - shown only for logged-in users */}
-                  {fullyWatched && user?.user_type === 'viewer' && (
-                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
-                      <div className="bg-green-600 text-white px-6 py-3 rounded-lg z-10 shadow-lg">
-                        <div className="flex flex-col items-center gap-1">
-                          <div className="flex items-center gap-2 text-lg font-bold">
-                            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                            Fully Watched
-                          </div>
-                          <div className="text-sm text-white/90">
-                            No more points available for this video
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                    className="w-full h-full"
+                  />
                 </div>
               )}
             </div>
-    
           </div>
           
-          {/* Tracker sidebar - 1/4 width on large screens */}
-          <div className="lg:col-span-1">
-            {video && user?.user_type === 'viewer' ? (
+          {video && user?.user_type === 'viewer' && (
+            <div className="lg:col-span-1">
               <div className="bg-white rounded-lg shadow-lg p-5 sticky top-24 h-fit">
                 <h3 className="text-lg font-semibold mb-4 border-b pb-2">Points Tracker</h3>
                 
-                {/* Watch time display - Optimized to reduce flickering */}
+                {/* Watch time display */}
                 <div className={`mb-3 rounded-lg px-4 py-2 transition-colors duration-300 ${
                   fullyWatched 
                     ? 'bg-gray-100'
@@ -1388,17 +1131,16 @@ export default function VideoPage() {
                         width: `${progress || calculateProgress(watchTime, video.duration_seconds)}%`,
                         transition: 'width 300ms ease-out'
                       }}
-                    ></div>
+                    />
                   </div>
                   
-                  {/* Status indicator - Optimized animations */}
                   <div className="mt-2 flex items-center">
                     {isPlaying && !fullyWatched ? (
                       <span className="text-xs px-2 py-1 bg-indigo-100 text-indigo-800 rounded-full flex items-center">
                         <span className="w-2 h-2 rounded-full bg-indigo-500 mr-1.5" 
                           style={{ animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}
-                        ></span>
-                        Currently watching
+                        />
+                        {/* Currently watching */}
                       </span>
                     ) : !isPlaying && !fullyWatched ? (
                       <span className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded-full flex items-center">
@@ -1415,8 +1157,8 @@ export default function VideoPage() {
                     )}
                   </div>
                 </div>
-                
-                {/* Points info - Static content, no animations needed */}
+
+                {/* Points info */}
                 <div className="mb-4 border rounded-lg p-3 bg-gray-50">
                   <h4 className="font-medium text-sm text-gray-800 mb-2">Points Available:</h4>
                   <div className="space-y-2">
@@ -1449,8 +1191,8 @@ export default function VideoPage() {
                     </div>
                   </div>
                 </div>
-                
-                {/* Points status - Optimized animations and transitions */}
+
+                {/* Points status */}
                 {!hasEarnedPoints && !alreadyEarnedForThisVideo && !fullyWatched && (
                   <div className={`mb-3 rounded-lg p-3 transition-colors duration-300 ${
                     isPlaying && watchTime < 60
@@ -1473,7 +1215,7 @@ export default function VideoPage() {
                               width: `${(watchTime / 60) * 100}%`,
                               transition: 'width 300ms ease-out'
                             }}
-                          ></div>
+                          />
                         </div>
                       </div>
                     ) : (
@@ -1492,22 +1234,33 @@ export default function VideoPage() {
                     <p className="text-xs text-green-700 mb-2">
                       Continue watching to earn 1 point per minute
                     </p>
-                    {isPlaying && (
-                      <div className="flex items-center bg-yellow-100 px-2 py-1 rounded text-xs text-yellow-800">
-                        <svg className="h-3 w-3 text-yellow-500 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z" />
-                          <path d="M10 5a1 1 0 00-1 1v4.5a1 1 0 00.293.707l2.5 2.5a1 1 0 001.414-1.414L10.5 9.5V6a1 1 0 00-1-1z" />
-                        </svg>
-                        Currently earning 1 pt/min
-                      </div>
-                    )}
+                    <div className={`flex items-center px-2 py-1 rounded text-xs ${
+                      playerState === 1 
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : 'bg-gray-100 text-gray-700'
+                    }`}>
+                      {playerState === 1 ? (
+                        <>
+                          <span className="w-2 h-2 rounded-full bg-yellow-500 mr-1.5" 
+                            style={{ animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}
+                          />
+                          Currently watching
+                        </>
+                      ) : (
+                        <>
+                          <PauseIcon className="w-3 h-3 mr-1" />
+                          Paused
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
                 
                 {fullyWatched && (
                   <div className="mb-3 rounded-lg p-3 bg-gray-50 border border-gray-200">
                     <div className="flex items-start">
-                      <svg className="h-4 w-4 text-green-500 mt-0.5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="h-4 w-4 text-
+                      green-500 mt-0.5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                       <div>
@@ -1524,31 +1277,7 @@ export default function VideoPage() {
                 
                 {/* Video controls */}
                 <div className="flex flex-col space-y-2 mt-4">
-                  <button
-                    onClick={handlePlayPauseClick}
-                    disabled={fullyWatched}
-                    className={`w-full flex items-center justify-center py-2 px-3 rounded-md ${
-                      fullyWatched 
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                        : isPlaying
-                          ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
-                          : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                    }`}
-                  >
-                    {isPlaying ? (
-                      <>
-                        <PauseIcon className="h-4 w-4 mr-2" />
-                        Pause Video
-                      </>
-                    ) : (
-                      <>
-                        <PlayIcon className="h-4 w-4 mr-2" />
-                        Play Video
-                      </>
-                    )}
-                  </button>
-                  
-                  {watchTime > 10 && (
+                  {watchTime > 0 && watchTime < 60 && (
                     <button
                       onClick={resetWatchProgress}
                       className="w-full flex items-center justify-center py-2 px-3 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -1559,7 +1288,7 @@ export default function VideoPage() {
                       Restart Video
                     </button>
                   )}
-                  
+
                   {!fullyWatched && (
                     <button
                       onClick={() => handleWatchLaterClick(video._id)}
@@ -1572,40 +1301,17 @@ export default function VideoPage() {
                   )}
                 </div>
               </div>
-            ) : video && !user && (
-              <div className="bg-white rounded-lg shadow-lg p-5 sticky top-24 h-fit">
-                <h3 className="text-lg font-semibold mb-4 border-b pb-2">Points Available</h3>
-                <div className="space-y-4">
-                  <div className="p-4 bg-indigo-50 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-gray-600">First minute:</span>
-                      <span className="text-lg font-semibold text-indigo-600">{video.points_per_minute} pts</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">After first minute:</span>
-                      <span className="text-lg font-semibold text-purple-600">1 pt/min</span>
-                    </div>
-                  </div>
-                  <Link
-                    href="/register"
-                    className="block w-full text-center bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition-colors"
-                  >
-                    Sign up to earn points
-                  </Link>
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
         
-        {/* Recommended videos section - placed below the main video and sidebar */}
         <div className="w-full">
           <div className="bg-white rounded-lg p-4 shadow-lg">
             <h2 className="text-xl font-semibold mb-4">More Videos</h2>
             
             {recommendedLoading ? (
               <div className="flex justify-center py-8">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -1615,15 +1321,13 @@ export default function VideoPage() {
                     className="group overflow-hidden rounded-lg bg-white shadow-lg transition-transform hover:scale-105"
                   >
                     <div className="relative h-48">
-                      {/* Video preview - autoplaying but muted */}
                       <iframe
                         src={`https://www.youtube.com/embed/${rec.youtube_id}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&loop=1&playlist=${rec.youtube_id}&start=5&end=15`}
                         title={rec.title}
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         className="absolute inset-0 w-full h-full"
-                      ></iframe>
+                      />
                       
-                      {/* Click overlay to go to video page */}
                       <Link href={`/videos/${rec._id}`} className="absolute inset-0 z-10">
                         <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/40 transition-colors">
                           <div className="bg-indigo-600/80 hover:bg-indigo-700/90 rounded-full p-4 flex items-center justify-center transition-all">
@@ -1632,23 +1336,20 @@ export default function VideoPage() {
                         </div>
                       </Link>
                       
-                      {/* Watch full video label */}
                       <div className="absolute bottom-8 left-0 right-0 flex justify-center z-20">
                         <div className="bg-black/60 text-white text-xs px-3 py-1 rounded-full">
                           Click to watch full video
                         </div>
                       </div>
                       
-                      {/* Duration badge */}
                       <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded z-20">
                         {formatDuration(rec.duration_seconds)}
                       </div>
                       
-                      {/* Watched badge */}
                       {checkIfVideoFullyWatched(rec._id) && (
                         <div className="absolute top-2 left-2 bg-green-600 text-white text-xs px-2 py-1 rounded-full flex items-center z-20">
                           <svg className="h-3 w-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                           </svg>
                           Watched
                         </div>
@@ -1675,24 +1376,6 @@ export default function VideoPage() {
                           </span>
                         )}
                       </div>
-                      
-                      {/* Only show watchlist button for logged-in viewers */}
-                      {user?.user_type === 'viewer' && (
-                        <div className="mt-2 flex justify-end">
-                          <button
-                            onClick={() => handleWatchLaterClick(rec._id)}
-                            disabled={checkIfVideoFullyWatched(rec._id)}
-                            className={`flex items-center justify-center py-1 px-2 rounded-md text-xs ${
-                              checkIfVideoFullyWatched(rec._id) 
-                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                                : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'
-                            }`}
-                          >
-                            <BookmarkIcon className="h-3 w-3 mr-1" />
-                            {checkIfVideoFullyWatched(rec._id) ? 'Watched' : 'Watch Later'}
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </div>
                 ))}
