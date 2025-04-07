@@ -10,7 +10,8 @@ class ViewRecord(BaseModel):
     video_id: PyObjectId
     viewer_id: PyObjectId
     watch_duration: int  # Duration in seconds
-    completed: bool = False
+    video_duration: int = 0  # Total video duration in seconds
+    fully_watched: bool = False
     points_earned: int = 0
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

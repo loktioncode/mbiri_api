@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from bson import ObjectId
 from fastapi import HTTPException, status
 from datetime import datetime
@@ -91,9 +91,13 @@ async def get_video_by_id(video_id: str) -> Optional[Video]:
     return Video(**video)
 
 
-async def update_video(video_id: str, update_data: dict, current_user: UserInDB) -> Video:
+async def update_video(
+        video_id: str,
+        update_data: Dict[str, Any],
+        current_user: UserInDB
+) -> Optional[Video]:
     """
-    Update video details
+    Update a video (creator only)
     """
     video = await videos_collection.find_one({"_id": ObjectId(video_id)})
     if not video:
@@ -102,21 +106,32 @@ async def update_video(video_id: str, update_data: dict, current_user: UserInDB)
             detail="Video not found"
         )
 
+    # Check ownership
     if str(video["creator_id"]) != str(current_user.id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to update this video"
+            detail="You don't have permission to update this video"
         )
 
+    # If we're updating the duration, log it
+    if "duration_seconds" in update_data and update_data["duration_seconds"] > 0:
+        print(f"Updating video {video_id} duration to {update_data['duration_seconds']} seconds")
+    
+    # Update the video
     await videos_collection.update_one(
         {"_id": ObjectId(video_id)},
-        {"$set": update_data}
+        {"$set": {**update_data, "updated_at": datetime.utcnow()}}
     )
 
+    # Get the updated video
     updated_video = await videos_collection.find_one({"_id": ObjectId(video_id)})
+    if not updated_video:
+        return None
+
+    # Convert ObjectId to string for response
     updated_video["_id"] = str(updated_video["_id"])
     updated_video["creator_id"] = str(updated_video["creator_id"])
-    
+
     return Video(**updated_video)
 
 
