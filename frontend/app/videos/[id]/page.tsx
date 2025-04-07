@@ -863,30 +863,46 @@ export default function VideoPage() {
     });
   };
 
-  // Add an effect for beforeunload event to warn users when leaving
+  // Add effect for beforeunload event to warn users when leaving
   useEffect(() => {
     // Only add warning if user is a viewer, hasn't earned points yet, and has watched some time
     const shouldWarn = user?.user_type === 'viewer' && !hasEarnedPoints && !alreadyEarnedForThisVideo && watchTime > 0 && watchTime < 60;
     
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Always pause video and save watch time when leaving
+      try {
+        if (playerRef.current && typeof playerRef.current.pauseVideo === 'function') {
+          playerRef.current.pauseVideo();
+        }
+        // Save current watch time
+        saveWatchTime(videoId, watchTime);
+        // Clear any active timers
+        if (watchTimeIntervalRef.current) {
+          clearInterval(watchTimeIntervalRef.current);
+          watchTimeIntervalRef.current = null;
+        }
+        if (reportingIntervalRef.current) {
+          clearInterval(reportingIntervalRef.current);
+          reportingIntervalRef.current = null;
+        }
+      } catch (error) {
+        console.error('Error handling beforeunload:', error);
+      }
+
+      // Show warning if needed
       if (shouldWarn) {
-        // Standard way of showing a confirmation dialog before leaving the page
         e.preventDefault();
         e.returnValue = '';
         return '';
       }
     };
     
-    if (shouldWarn) {
-      window.addEventListener('beforeunload', handleBeforeUnload);
-    } else {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
     
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [user, hasEarnedPoints, alreadyEarnedForThisVideo, watchTime]);
+  }, [user, hasEarnedPoints, alreadyEarnedForThisVideo, watchTime, videoId]);
 
   // Add a warning banner at the top of the video
   const renderWarningBanner = () => {
