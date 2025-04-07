@@ -1033,277 +1033,302 @@ export default function VideoPage() {
     <div className="container mx-auto px-4 py-6">
       <Toaster />
       
-      {/* Main content area */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Video player and details (taking 2/3 of the screen on larger devices) */}
-        <div className="lg:col-span-2">
-          {/* Full-width, responsive video player */}
-          {renderWarningBanner()}
-          <div className="w-full aspect-video bg-black rounded-lg overflow-hidden shadow-lg sticky top-4 relative">
-            {videoLoading ? (
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="animate-pulse">Loading video...</div>
-              </div>
-            ) : videoError || !video ? (
-              <div className="rounded-lg bg-red-50 p-4 text-red-800">
-                {videoError ? 'An error occurred while loading the video' : 'Video not found'}
-              </div>
-            ) : (
-              <div className="relative w-full h-full">
-                <iframe
-                  ref={iframeRef}
-                  id="youtube-player"
-                  src={`https://www.youtube.com/embed/${video.youtube_id}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&modestbranding=1&showinfo=0&controls=1`}
-                  title={video.title}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                  className={`w-full h-full ${fullyWatched ? 'opacity-75' : ''}`}
-                ></iframe>
-                
-                {/* Only show pause overlay when the video is actually paused, not playing */}
-                {!isPlaying && (
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                    <div className="text-white text-lg font-semibold z-10 bg-black/50 px-4 py-2 rounded">
-                      {fullyWatched 
-                        ? 'Video paused - Fully watched'
-                        : watchTime < 60 && !hasEarnedPoints && !alreadyEarnedForThisVideo
-                          ? 'Video paused - Watch 1 minute to earn points'
-                          : 'Video paused - Timer paused'
-                      }
-                    </div>
-                    <img 
-                      src={`https://img.youtube.com/vi/${video.youtube_id}/hqdefault.jpg`} 
-                      alt="Video Thumbnail" 
-                      className="absolute inset-0 w-full h-full object-cover opacity-50 z-0" 
-                    />
-                  </div>
-                )}
-                
-                {/* Fully watched overlay - shown regardless of playing status */}
-                {fullyWatched && (
-                  <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
-                    <div className="bg-green-600 text-white px-6 py-3 rounded-lg z-10 shadow-lg">
-                      <div className="flex flex-col items-center gap-1">
-                        <div className="flex items-center gap-2 text-lg font-bold">
-                          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Fully Watched
-                        </div>
-                        {user?.user_type === 'viewer' && (
-                          <div className="text-sm text-white/90">
-                            No more points available for this video
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
+      {/* Main content area with video player and tracker side by side */}
+      <div className="flex flex-col space-y-8">
+        {/* Video player and tracker side by side */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          {/* Video player - 3/4 width on large screens */}
+          <div className="lg:col-span-3 w-full">
+            {renderWarningBanner()}
+            
+            {/* Video title above player */}
+            {video && (
+              <div className="mb-3">
+                <h1 className="text-2xl font-bold text-gray-900">{video.title}</h1>
+                <div className="flex items-center text-sm text-gray-500 mt-1">
+                  <span>By {video.creator_username}</span>
+                  <span className="mx-2">•</span>
+                  <span>{formatDuration(video.duration_seconds)}</span>
+                  {fullyWatched && (
+                    <>
+                      <span className="mx-2">•</span>
+                      <span className="inline-flex items-center text-green-600">
+                        <svg className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Fully Watched
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
             )}
-          </div>
-          
-          {/* Video details card */}
-          <div className="mt-6 bg-white rounded-lg shadow-lg p-6">
-            {video && (
-              <>
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <h1 className="text-2xl font-bold text-gray-900">{video.title}</h1>
-                    <p className="text-sm text-gray-500 mt-1">By {video.creator_username}</p>
-                    
-                    {/* Video duration display */}
-                    <div className="flex items-center gap-2 mt-2">
-                      <p className="text-sm text-gray-500">
-                        Duration: {formatDuration(video.duration_seconds)}
-                      </p>
-                      
-                      {fullyWatched && (
-                        <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
-                          <svg className="-ml-0.5 mr-1.5 h-2 w-2 text-green-400" fill="currentColor" viewBox="0 0 8 8">
-                            <circle cx="4" cy="4" r="3" />
-                          </svg>
-                          Fully Watched
-                        </span>
-                      )}
-                      
-                      {video.total_points_awarded > 0 && user?.user_type === 'viewer' && (
-                        <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800">
-                          <svg className="h-3 w-3 text-yellow-500 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.736 6.979C9.208 6.193 9.696 6 10 6c.304 0 .792.193 1.264.979a1 1 0 001.715-1.029C12.279 4.784 11.232 4 10 4s-2.279.784-2.979 1.95a1 1 0 001.715 1.029zM6 12a2 2 0 114 0 2 2 0 01-4 0zm6 0a2 2 0 114 0 2 2 0 01-4 0z" clipRule="evenodd" />
-                          </svg>
-                          {video.total_points_awarded} points earned
-                        </span>
-                      )}
-                    </div>
-                    
-                    {/* Add watch progress indicator */}
-                    {watchTime > 10 && (
-                      <div className="mt-2 w-full bg-gray-200 rounded-full h-1.5">
-                        <div 
-                          className={`h-1.5 rounded-full ${fullyWatched ? 'bg-green-600' : 'bg-indigo-600'}`}
-                          style={{ 
-                            width: `${calculateProgress(watchTime, video.duration_seconds)}%` 
-                          }}
-                        ></div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center space-x-2">
-                    {/* Play/Pause button */}
-                    <button
-                      onClick={handlePlayPauseClick}
-                      className={`flex items-center justify-center rounded-full w-10 h-10 ${
-                        fullyWatched 
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                      title={fullyWatched ? "You've fully watched this video" : isPlaying ? "Pause" : "Play"}
-                      disabled={fullyWatched}
-                    >
-                      {isPlaying ? <PauseIcon className="h-5 w-5" /> : <PlayIcon className="h-5 w-5" />}
-                    </button>
-                    
-                    {/* Restart video button - only show if there's progress */}
-                    {watchTime > 10 && (
-                      <button
-                        onClick={resetWatchProgress}
-                        className="flex items-center justify-center rounded-full w-10 h-10 bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        title="Restart video"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-                        </svg>
-                      </button>
-                    )}
-                    
-                    {/* Watchlist button - only for logged in viewers */}
-                    {user?.user_type === 'viewer' && (
-                      <button
-                        onClick={() => handleWatchLaterClick(video._id)}
-                        disabled={isUpdating || fullyWatched}
-                        className={`flex items-center justify-center rounded-full w-10 h-10 ${
-                          fullyWatched ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                        }`}
-                        title={fullyWatched ? 'You have watched this entire video' : 'Add to Watch Later'}
-                      >
-                        <BookmarkIcon className="h-5 w-5" />
-                      </button>
-                    )}
-                  </div>
+            
+            <div className="w-full aspect-video bg-black rounded-lg overflow-hidden shadow-lg sticky top-4 relative">
+              {videoLoading ? (
+                <div className="w-full h-full flex items-center justify-center">
+                  <div className="animate-pulse">Loading video...</div>
                 </div>
-                
-                {/* Watch time and points indicator */}
-                {user?.user_type === 'viewer' && (
-                  <div className="mb-4 flex items-center flex-wrap gap-2">
-                    <div className={`rounded-full px-3 py-1 text-sm flex items-center ${
-                      fullyWatched 
-                        ? 'bg-gray-100 text-gray-700'
-                        : isPlaying 
-                          ? 'bg-indigo-100 text-indigo-800 animate-pulse' 
-                          : 'bg-gray-100 text-gray-700'
-                    }`}>
-                      <span>
-                        {isPlaying ? 'Watching: ' : fullyWatched ? 'Watched: ' : 'Paused: '}
-                        {Math.floor(watchTime / 60)}m {watchTime % 60}s
-                      </span>
-                      {!isPlaying && !fullyWatched && <PauseIcon className="h-4 w-4 ml-1" />}
-                      {fullyWatched && (
-                        <svg className="h-4 w-4 ml-1 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </div>
-                    
-                    {!hasEarnedPoints && !alreadyEarnedForThisVideo && !fullyWatched && (
-                      <div className={`rounded-full px-3 py-1 text-sm ${
-                        isPlaying && watchTime < 60
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : !isPlaying 
-                            ? 'bg-gray-100 text-gray-600' 
-                            : 'bg-green-100 text-green-800'
-                      }`}>
-                        {watchTime < 60 ? (
-                          <>
-                            Watch 1 minute to earn {video.points_per_minute} points
-                            {!isPlaying && ' (timer paused)'}
-                          </>
-                        ) : (
-                          <>You'll earn {video.points_per_minute} points after watching for 1 minute</>
-                        )}
+              ) : videoError || !video ? (
+                <div className="rounded-lg bg-red-50 p-4 text-red-800">
+                  {videoError ? 'An error occurred while loading the video' : 'Video not found'}
+                </div>
+              ) : (
+                <div className="relative w-full h-full">
+                  <iframe
+                    ref={iframeRef}
+                    id="youtube-player"
+                    src={`https://www.youtube.com/embed/${video.youtube_id}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&modestbranding=1&showinfo=0&controls=1`}
+                    title={video.title}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    className={`w-full h-full ${fullyWatched ? 'opacity-75' : ''}`}
+                  ></iframe>
+                  
+                  {/* Only show pause overlay when the video is actually paused, not playing */}
+                  {!isPlaying && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                      <div className="text-white text-lg font-semibold z-10 bg-black/50 px-4 py-2 rounded">
+                        {fullyWatched 
+                          ? 'Video paused - Fully watched'
+                          : watchTime < 60 && !hasEarnedPoints && !alreadyEarnedForThisVideo
+                            ? 'Video paused - Watch 1 minute to earn points'
+                            : 'Video paused - Timer paused'
+                        }
                       </div>
-                    )}
-                    
-                    {(hasEarnedPoints || alreadyEarnedForThisVideo) && !fullyWatched && (
-                      <div className="rounded-full bg-green-100 px-3 py-1 text-sm text-green-800 flex items-center">
-                        <span className="mr-1">Points earned</span>
-                        <span className="inline-block w-1 h-1 rounded-full bg-green-800 mx-1"></span>
-                        <span className="flex items-center">
-                          <span className="mr-1">Continue for bonus points</span>
-                          {isPlaying && (
-                            <span className="flex items-center animate-pulse bg-yellow-100 px-1.5 py-0.5 rounded-full text-xs text-yellow-800 ml-1">
-                              Earning {Math.floor(video.points_per_minute * 0.1)} pts/min
-                            </span>
+                      <img 
+                        src={`https://img.youtube.com/vi/${video.youtube_id}/hqdefault.jpg`} 
+                        alt="Video Thumbnail" 
+                        className="absolute inset-0 w-full h-full object-cover opacity-50 z-0" 
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Fully watched overlay - shown regardless of playing status */}
+                  {fullyWatched && (
+                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
+                      <div className="bg-green-600 text-white px-6 py-3 rounded-lg z-10 shadow-lg">
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="flex items-center gap-2 text-lg font-bold">
+                            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Fully Watched
+                          </div>
+                          {user?.user_type === 'viewer' && (
+                            <div className="text-sm text-white/90">
+                              No more points available for this video
+                            </div>
                           )}
-                        </span>
+                        </div>
                       </div>
-                    )}
-                    
-                    {fullyWatched && (
-                      <div className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 flex items-center">
-                        <svg className="h-4 w-4 text-green-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        <span>You've fully watched this video - no more points available</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                {fullyWatched && user?.user_type === 'viewer' && (
-                  <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-md">
-                    <div className="flex items-center">
-                      <div className="mr-3 flex-shrink-0">
-                        <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Video Completed</p>
-                        <p className="text-xs text-gray-500">You've fully watched this video. No more points can be earned.</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                <p className="text-gray-700 mb-6">{video.description}</p>
-                
-                <div className="border-t border-gray-200 pt-4">
-                  {user?.user_type === 'viewer' ? (
-                    <div className="flex flex-col space-y-2">
-                      <span className="rounded-full bg-indigo-100 px-3 py-1 text-sm inline-flex items-center">
-                        <span className="font-medium text-indigo-800">First minute:</span>
-                        <span className="ml-1 text-indigo-700">{video.points_per_minute} pts/min</span>
-                      </span>
-                      <span className="rounded-full bg-purple-100 px-3 py-1 text-sm inline-flex items-center">
-                        <span className="font-medium text-purple-800">Additional time:</span>
-                        <span className="ml-1 text-purple-700">{Math.floor(video.points_per_minute * 0.1)} pts/min (10% rate)</span>
-                      </span>
-                    </div>
-                  ) : !user && (
-                    <div className="text-sm text-gray-500">
-                      Sign up as a viewer to earn up to {video.points_per_minute} points/min watching this video
                     </div>
                   )}
                 </div>
-              </>
+              )}
+            </div>
+    
+          </div>
+          
+          {/* Tracker sidebar - 1/4 width on large screens */}
+          <div className="lg:col-span-1">
+            {video && user?.user_type === 'viewer' && (
+              <div className="bg-white rounded-lg shadow-lg p-5 sticky top-24 h-fit">
+                <h3 className="text-lg font-semibold mb-4 border-b pb-2">Points Tracker</h3>
+                
+                {/* Watch time display */}
+                <div className={`mb-3 rounded-lg px-4 py-2 ${
+                  fullyWatched 
+                    ? 'bg-gray-100'
+                    : isPlaying 
+                      ? 'bg-indigo-50 border border-indigo-100' 
+                      : 'bg-gray-50'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Watch Time:</span>
+                    <span className={`font-bold ${isPlaying && !fullyWatched ? 'text-indigo-600 animate-pulse' : 'text-gray-700'}`}>
+                      {Math.floor(watchTime / 60)}m {watchTime % 60}s
+                    </span>
+                  </div>
+                  
+                  <div className="mt-2 w-full bg-gray-200 rounded-full h-1.5">
+                    <div 
+                      className={`h-1.5 rounded-full ${fullyWatched ? 'bg-green-600' : 'bg-indigo-600'}`}
+                      style={{ 
+                        width: `${calculateProgress(watchTime, video.duration_seconds)}%` 
+                      }}
+                    ></div>
+                  </div>
+                  
+                  {/* Status indicator */}
+                  <div className="mt-2 flex items-center">
+                    {isPlaying && !fullyWatched ? (
+                      <span className="text-xs px-2 py-1 bg-indigo-100 text-indigo-800 rounded-full flex items-center">
+                        <span className="w-2 h-2 rounded-full bg-indigo-500 mr-1.5 animate-pulse"></span>
+                        Currently watching
+                      </span>
+                    ) : !isPlaying && !fullyWatched ? (
+                      <span className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded-full flex items-center">
+                        <PauseIcon className="w-3 h-3 mr-1" />
+                        Paused
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2 py-1 bg-green-100 text-green-800 rounded-full flex items-center">
+                        <svg className="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Fully watched
+                      </span>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Points info */}
+                <div className="mb-4 border rounded-lg p-3 bg-gray-50">
+                  <h4 className="font-medium text-sm text-gray-800 mb-2">Points Available:</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-600">First minute:</span>
+                      <span className="text-sm font-semibold text-indigo-700">{video.points_per_minute} pts</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-gray-600">Continued watching:</span>
+                      <span className="text-sm font-semibold text-purple-700">{Math.floor(video.points_per_minute * 0.1)} pts/min</span>
+                    </div>
+                    {video.total_points_awarded > 0 && (
+                      <div className="flex justify-between items-center pt-1 mt-1 border-t border-gray-200">
+                        <span className="text-xs text-gray-600">You've earned:</span>
+                        <span className="text-sm font-semibold text-green-700">{video.total_points_awarded} pts</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Points status */}
+                {!hasEarnedPoints && !alreadyEarnedForThisVideo && !fullyWatched && (
+                  <div className={`mb-3 rounded-lg p-3 ${
+                    isPlaying && watchTime < 60
+                      ? 'bg-yellow-50 border border-yellow-100'
+                      : 'bg-gray-50 border border-gray-100' 
+                  }`}>
+                    {watchTime < 60 ? (
+                      <div>
+                        <h4 className="text-sm font-medium mb-1">
+                          {isPlaying ? 'Earning Status:' : 'Paused:'}
+                        </h4>
+                        <div className="text-xs">
+                          Watch {60 - watchTime} more seconds to earn {video.points_per_minute} points
+                          {!isPlaying && ' (timer paused)'}
+                        </div>
+                        <div className="mt-2 w-full bg-gray-200 rounded-full h-1">
+                          <div 
+                            className="h-1 rounded-full bg-yellow-500"
+                            style={{ width: `${(watchTime / 60) * 100}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm">
+                        You'll earn {video.points_per_minute} points after watching for 1 minute
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {(hasEarnedPoints || alreadyEarnedForThisVideo) && !fullyWatched && (
+                  <div className="mb-3 rounded-lg p-3 bg-green-50 border border-green-100">
+                    <h4 className="text-sm font-medium text-green-800 mb-1">
+                      Points Earned!
+                    </h4>
+                    <p className="text-xs text-green-700 mb-2">
+                      Continue watching to earn bonus points
+                    </p>
+                    {isPlaying && (
+                      <div className="flex items-center bg-yellow-100 px-2 py-1 rounded text-xs text-yellow-800 animate-pulse">
+                        <svg className="h-3 w-3 text-yellow-500 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z" />
+                          <path d="M10 5a1 1 0 00-1 1v4a1 1 0 00.293.707l2.5 2.5a1 1 0 001.414-1.414L10.5 9.5V6a1 1 0 00-1-1z" />
+                        </svg>
+                        Currently earning {Math.floor(video.points_per_minute * 0.1)} pts/min
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {fullyWatched && (
+                  <div className="mb-3 rounded-lg p-3 bg-gray-50 border border-gray-200">
+                    <div className="flex items-start">
+                      <svg className="h-4 w-4 text-green-500 mt-0.5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-800">
+                          Video Completed
+                        </h4>
+                        <p className="text-xs text-gray-600 mt-1">
+                          You've fully watched this video. No more points available.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Video controls */}
+                <div className="flex flex-col space-y-2 mt-4">
+                  <button
+                    onClick={handlePlayPauseClick}
+                    disabled={fullyWatched}
+                    className={`w-full flex items-center justify-center py-2 px-3 rounded-md ${
+                      fullyWatched 
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                        : isPlaying
+                          ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
+                          : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                    }`}
+                  >
+                    {isPlaying ? (
+                      <>
+                        <PauseIcon className="h-4 w-4 mr-2" />
+                        Pause Video
+                      </>
+                    ) : (
+                      <>
+                        <PlayIcon className="h-4 w-4 mr-2" />
+                        Play Video
+                      </>
+                    )}
+                  </button>
+                  
+                  {watchTime > 10 && (
+                    <button
+                      onClick={resetWatchProgress}
+                      className="w-full flex items-center justify-center py-2 px-3 rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 mr-2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                      </svg>
+                      Restart Video
+                    </button>
+                  )}
+                  
+                  {!fullyWatched && (
+                    <button
+                      onClick={() => handleWatchLaterClick(video._id)}
+                      disabled={isUpdating}
+                      className="w-full flex items-center justify-center py-2 px-3 rounded-md bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200"
+                    >
+                      <BookmarkIcon className="h-4 w-4 mr-2" />
+                      {watchlistItem ? 'Remove from Watchlist' : 'Add to Watchlist'}
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         </div>
         
-        {/* Recommended videos sidebar (taking 1/3 of the screen on larger devices) */}
-        <div className="lg:col-span-1">
+        {/* Recommended videos section - placed below the main video and sidebar */}
+        <div className="w-full">
           <div className="bg-white rounded-lg p-4 shadow-lg">
             <h2 className="text-xl font-semibold mb-4">More Videos</h2>
             
@@ -1312,7 +1337,7 @@ export default function VideoPage() {
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent"></div>
               </div>
             ) : (
-              <div className="grid gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {filteredRecommendedVideos.map((rec) => (
                   <div key={rec._id} className="group relative">
                     <div className="relative">
