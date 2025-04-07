@@ -154,14 +154,15 @@ async def record_watch_session(
             # First time watching - award video's specified points for first minute, then 1 point per minute after that
             minutes_watched = watch_duration / 60.0
             logger.info(f"First time watching - minutes watched: {minutes_watched:.2f}")
+            logger.info(f"Watch duration: {watch_duration} seconds, Video points per minute: {video_points_per_minute}")
             
-            if minutes_watched <= 1:
-                # First minute or less - award video's specified points rate
+            if minutes_watched < 1:
+                # Less than one minute - award video's specified points rate
                 points_earned = int(video_points_per_minute * minutes_watched)
                 logger.info(f"CALCULATION: video_points_per_minute ({video_points_per_minute}) * minutes_watched ({minutes_watched:.2f}) = {points_earned}")
                 logger.info(f"First-time viewer, first minute: awarding {points_earned} points at rate of {video_points_per_minute} for {minutes_watched:.2f} minutes")
             else:
-                # More than one minute - award video's points for first minute plus 1 point per additional minute
+                # One minute or more - award video's points for first minute plus 1 point per additional minute
                 first_minute_points = video_points_per_minute
                 additional_minutes = minutes_watched - 1
                 additional_points = int(continued_points_per_minute * additional_minutes)

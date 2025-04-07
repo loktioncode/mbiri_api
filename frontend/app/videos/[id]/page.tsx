@@ -1092,7 +1092,7 @@ export default function VideoPage() {
           {video && user?.user_type === 'viewer' && (
             <div className="lg:col-span-1">
               <div className="bg-white rounded-lg shadow-lg p-5 sticky top-24 h-fit">
-                <h3 className="text-lg font-semibold mb-4 border-b pb-2">Points Tracker</h3>
+                <h3 className="text-lg font-semibold mb-4 border-b pb-2 text-gray-800">Points Tracker</h3>
                 
                 {/* Watch time display */}
                 <div className={`mb-3 rounded-lg px-4 py-2 transition-colors duration-300 ${
@@ -1250,8 +1250,7 @@ export default function VideoPage() {
                 {fullyWatched && (
                   <div className="mb-3 rounded-lg p-3 bg-gray-50 border border-gray-200">
                     <div className="flex items-start">
-                      <svg className="h-4 w-4 text-
-                      green-500 mt-0.5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="h-4 w-4 text-green-500 mt-0.5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                       <div>
