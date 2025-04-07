@@ -1339,72 +1339,89 @@ export default function VideoPage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {filteredRecommendedVideos.map((rec) => (
-                  <div key={rec._id} className="group relative">
-                    <div className="relative">
-                      <Link href={`/videos/${rec._id}`}>
-                        <div className="aspect-video rounded-lg overflow-hidden bg-gray-100 relative">
-                          <img
-                            src={`https://img.youtube.com/vi/${rec.youtube_id}/mqdefault.jpg`}
-                            alt={rec.title}
-                            className="w-full h-full object-cover group-hover:opacity-90 transition"
-                          />
-                          {/* Duration badge */}
-                          <div className="absolute bottom-1 right-1 bg-black bg-opacity-70 text-white text-xs px-1.5 py-0.5 rounded">
-                            {formatDuration(rec.duration_seconds)}
-                          </div>
-                          
-                          {/* Watched badge */}
-                          {checkIfVideoFullyWatched(rec._id) && (
-                            <div className="absolute top-1 left-1 bg-green-600 text-white text-xs px-1.5 py-0.5 rounded-full flex items-center">
-                              <svg className="h-3 w-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                              </svg>
-                              Watched
-                            </div>
-                          )}
-                          
-                          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all">
-                            <PlayIcon className="h-12 w-12 text-white opacity-0 group-hover:opacity-100" />
+                  <div
+                    key={rec._id}
+                    className="group overflow-hidden rounded-lg bg-white shadow-lg transition-transform hover:scale-105"
+                  >
+                    <div className="relative h-48">
+                      {/* Video preview - autoplaying but muted */}
+                      <iframe
+                        src={`https://www.youtube.com/embed/${rec.youtube_id}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&loop=1&playlist=${rec.youtube_id}&start=5&end=15`}
+                        title={rec.title}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        className="absolute inset-0 w-full h-full"
+                      ></iframe>
+                      
+                      {/* Click overlay to go to video page */}
+                      <Link href={`/videos/${rec._id}`} className="absolute inset-0 z-10">
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/40 transition-colors">
+                          <div className="bg-indigo-600/80 hover:bg-indigo-700/90 rounded-full p-4 flex items-center justify-center transition-all">
+                            <PlayIcon className="h-8 w-8 text-white" />
                           </div>
                         </div>
                       </Link>
                       
-                      {/* Only show watchlist button for logged-in viewers */}
-                      {user?.user_type === 'viewer' && (
-                        <button
-                          onClick={() => handleWatchLaterClick(rec._id)}
-                          className={`absolute top-2 right-2 bg-white rounded-full p-1 shadow-sm transition-opacity opacity-0 group-hover:opacity-100 ${
-                            checkIfVideoFullyWatched(rec._id) ? 'bg-opacity-70 hover:bg-opacity-70 cursor-not-allowed' : 'bg-opacity-80 hover:bg-opacity-100'
-                          }`}
-                          title={checkIfVideoFullyWatched(rec._id) ? "You've fully watched this video" : "Add to Watch Later"}
-                          disabled={checkIfVideoFullyWatched(rec._id)}
-                        >
-                          <BookmarkIcon className={`h-5 w-5 ${checkIfVideoFullyWatched(rec._id) ? 'text-gray-400' : 'text-indigo-600'}`} />
-                        </button>
+                      {/* Watch full video label */}
+                      <div className="absolute bottom-8 left-0 right-0 flex justify-center z-20">
+                        <div className="bg-black/60 text-white text-xs px-3 py-1 rounded-full">
+                          Click to watch full video
+                        </div>
+                      </div>
+                      
+                      {/* Duration badge */}
+                      <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded z-20">
+                        {formatDuration(rec.duration_seconds)}
+                      </div>
+                      
+                      {/* Watched badge */}
+                      {checkIfVideoFullyWatched(rec._id) && (
+                        <div className="absolute top-2 left-2 bg-green-600 text-white text-xs px-2 py-1 rounded-full flex items-center z-20">
+                          <svg className="h-3 w-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                          </svg>
+                          Watched
+                        </div>
                       )}
                     </div>
                     
-                    <div className="mt-2">
+                    <div className="p-4">
                       <Link href={`/videos/${rec._id}`}>
-                        <h3 className="font-medium text-gray-900 line-clamp-2 hover:text-indigo-600">
+                        <h3 className="mb-2 text-base font-semibold text-gray-900 line-clamp-2 hover:text-indigo-600">
                           {rec.title}
                         </h3>
                       </Link>
-                      <p className="text-sm text-gray-500">{rec.creator_username}</p>
-                      <div className="mt-1 flex justify-between items-center">
-                        <span className="text-xs bg-indigo-50 text-indigo-800 px-2 py-1 rounded-full flex items-center">
-                          <svg className="h-3 w-3 text-yellow-500 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                            <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z" />
-                            <path d="M10 5a1 1 0 00-1 1v4a1 1 0 00.293.707l2.5 2.5a1 1 0 001.414-1.414L10.5 9.5V6a1 1 0 00-1-1z" />
-                          </svg>
-                          {rec.points_per_minute} pts/min
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-500">
+                          By {rec.creator_username}
                         </span>
-                        {rec.total_points_awarded > 0 && (
-                          <span className="text-xs bg-yellow-50 text-yellow-800 px-2 py-1 rounded-full">
-                            {rec.total_points_awarded} points
+                        {user?.user_type === 'viewer' ? (
+                          <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs text-indigo-800">
+                            Earn {rec.points_per_minute} pts/min
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600">
+                            {rec.points_per_minute} pts/min
                           </span>
                         )}
                       </div>
+                      
+                      {/* Only show watchlist button for logged-in viewers */}
+                      {user?.user_type === 'viewer' && (
+                        <div className="mt-2 flex justify-end">
+                          <button
+                            onClick={() => handleWatchLaterClick(rec._id)}
+                            disabled={checkIfVideoFullyWatched(rec._id)}
+                            className={`flex items-center justify-center py-1 px-2 rounded-md text-xs ${
+                              checkIfVideoFullyWatched(rec._id) 
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                                : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200'
+                            }`}
+                          >
+                            <BookmarkIcon className="h-3 w-3 mr-1" />
+                            {checkIfVideoFullyWatched(rec._id) ? 'Watched' : 'Watch Later'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
