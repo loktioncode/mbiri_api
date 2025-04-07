@@ -92,8 +92,11 @@ export default function Navbar() {
         <div className="flex h-16 justify-between">
           <div className="flex">
             <div className="flex flex-shrink-0 items-center">
-              <Link href="/" className="text-xl font-bold text-indigo-600">
-                VideoLearn
+              <Link href="/" className="text-xl font-bold text-indigo-600 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 mr-2">
+                  <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM8.25 9.75a.75.75 0 01.75-.75h.5a.75.75 0 010 1.5H9a.75.75 0 01-.75-.75zm4.5 0a.75.75 0 01.75-.75h.5a.75.75 0 010 1.5h-.5a.75.75 0 01-.75-.75zm1.444 6.329a.75.75 0 00-1.388-.058l-.002.003a.75.75 0 00.048.849c.591.7 1.364 1.127 2.146 1.127.78 0 1.554-.427 2.146-1.127a.75.75 0 00.048-.849l-.002-.003a.75.75 0 00-1.388.058c-.134.158-.328.343-.804.343-.476 0-.67-.185-.804-.343z" clipRule="evenodd" />
+                </svg>
+                SIFA
               </Link>
             </div>
             <div className="hidden sm:ml-6 sm:flex sm:space-x-8">

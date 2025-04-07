@@ -1218,6 +1218,33 @@ export default function VideoPage() {
         </button>
       </div>
       
+      {/* Sign up prompt for non-logged in users */}
+      {!user && (
+        <div className="mb-6 bg-indigo-50 border border-indigo-100 rounded-lg p-4">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm-2.625 6c-.54 0-.828.419-.936.634a1.96 1.96 0 00-.189.866c0 .298.059.605.189.866.108.215.395.634.936.634.54 0 .828-.419.936-.634.13-.26.189-.568.189-.866 0-.298-.059-.605-.189-.866-.108-.215-.395-.634-.936-.634zm4.5 0c-.54 0-.828.419-.936.634a1.96 1.96 0 00-.189.866c0 .298.059.605.189.866.108.215.395.634.936.634.54 0 .828-.419.936-.634.13-.26.189-.568.189-.866 0-.298-.059-.605-.189-.866-.108-.215-.395-.634-.936-.634zm-2.625 7.292c-.54 0-.828.419-.936.634a1.96 1.96 0 00-.189.866c0 .298.059.605.189.866.108.215.395.634.936.634.54 0 .828-.419.936-.634.13-.26.189-.568.189-.866 0-.298-.059-.605-.189-.866-.108-.215-.395-.634-.936-.634z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3 flex-1">
+              <h3 className="text-sm font-medium text-indigo-800">Sign up to earn points!</h3>
+              <p className="mt-1 text-sm text-indigo-600">
+                Create an account to earn {video?.points_per_minute || 'bonus'} points for your first minute of watching, plus 1 point per minute after that.
+              </p>
+            </div>
+            <div className="ml-6">
+              <Link
+                href="/register"
+                className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              >
+                Sign up now
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Main content area with video player and tracker side by side */}
       <div className="flex flex-col space-y-8">
         {/* Video player and tracker side by side */}
@@ -1234,7 +1261,7 @@ export default function VideoPage() {
                   <span>By {video.creator_username}</span>
                   <span className="mx-2">•</span>
                   <span>{formatDuration(video.duration_seconds)}</span>
-                  {fullyWatched && (
+                  {user?.user_type === 'viewer' && fullyWatched && (
                     <>
                       <span className="mx-2">•</span>
                       <span className="inline-flex items-center text-green-600">
@@ -1270,8 +1297,8 @@ export default function VideoPage() {
                     className={`w-full h-full ${fullyWatched ? 'opacity-75' : ''}`}
                   ></iframe>
                   
-                  {/* Only show pause overlay when the video is actually paused, not playing */}
-                  {!isPlaying && (
+                  {/* Only show pause overlay for logged-in users when the video is paused */}
+                  {!isPlaying && user?.user_type === 'viewer' && (
                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                       <div className="text-white text-lg font-semibold z-10 bg-black/50 px-4 py-2 rounded">
                         {fullyWatched 
@@ -1289,8 +1316,22 @@ export default function VideoPage() {
                     </div>
                   )}
                   
-                  {/* Fully watched overlay - shown regardless of playing status */}
-                  {fullyWatched && (
+                  {/* Guest user overlay - shown only when paused and not logged in */}
+                  {!isPlaying && !user && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                      <div className="text-white text-lg font-semibold z-10 bg-black/50 px-4 py-2 rounded">
+                        Sign up to track your progress and earn points!
+                      </div>
+                      <img 
+                        src={`https://img.youtube.com/vi/${video.youtube_id}/hqdefault.jpg`} 
+                        alt="Video Thumbnail" 
+                        className="absolute inset-0 w-full h-full object-cover opacity-50 z-0" 
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Fully watched overlay - shown only for logged-in users */}
+                  {fullyWatched && user?.user_type === 'viewer' && (
                     <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
                       <div className="bg-green-600 text-white px-6 py-3 rounded-lg z-10 shadow-lg">
                         <div className="flex flex-col items-center gap-1">
@@ -1300,11 +1341,9 @@ export default function VideoPage() {
                             </svg>
                             Fully Watched
                           </div>
-                          {user?.user_type === 'viewer' && (
-                            <div className="text-sm text-white/90">
-                              No more points available for this video
-                            </div>
-                          )}
+                          <div className="text-sm text-white/90">
+                            No more points available for this video
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1317,12 +1356,12 @@ export default function VideoPage() {
           
           {/* Tracker sidebar - 1/4 width on large screens */}
           <div className="lg:col-span-1">
-            {video && user?.user_type === 'viewer' && (
+            {video && user?.user_type === 'viewer' ? (
               <div className="bg-white rounded-lg shadow-lg p-5 sticky top-24 h-fit">
                 <h3 className="text-lg font-semibold mb-4 border-b pb-2">Points Tracker</h3>
                 
-                {/* Watch time display */}
-                <div className={`mb-3 rounded-lg px-4 py-2 ${
+                {/* Watch time display - Optimized to reduce flickering */}
+                <div className={`mb-3 rounded-lg px-4 py-2 transition-colors duration-300 ${
                   fullyWatched 
                     ? 'bg-gray-100'
                     : isPlaying 
@@ -1331,25 +1370,34 @@ export default function VideoPage() {
                 }`}>
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Watch Time:</span>
-                    <span className={`font-bold ${isPlaying && !fullyWatched ? 'text-indigo-600 animate-pulse' : 'text-gray-700'}`}>
+                    <span className={`font-bold transition-colors duration-300 ${
+                      isPlaying && !fullyWatched 
+                        ? 'text-indigo-600' 
+                        : 'text-gray-700'
+                    }`}>
                       {Math.floor(watchTime / 60)}m {watchTime % 60}s
                     </span>
                   </div>
                   
-                  <div className="mt-2 w-full bg-gray-200 rounded-full h-1.5">
+                  <div className="mt-2 w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
                     <div 
-                      className={`h-1.5 rounded-full ${fullyWatched ? 'bg-green-600' : 'bg-indigo-600'}`}
+                      className={`h-1.5 rounded-full transition-all duration-300 ${
+                        fullyWatched ? 'bg-green-600' : 'bg-indigo-600'
+                      }`}
                       style={{ 
-                        width: `${progress || calculateProgress(watchTime, video.duration_seconds)}%` 
+                        width: `${progress || calculateProgress(watchTime, video.duration_seconds)}%`,
+                        transition: 'width 300ms ease-out'
                       }}
                     ></div>
                   </div>
                   
-                  {/* Status indicator */}
+                  {/* Status indicator - Optimized animations */}
                   <div className="mt-2 flex items-center">
                     {isPlaying && !fullyWatched ? (
                       <span className="text-xs px-2 py-1 bg-indigo-100 text-indigo-800 rounded-full flex items-center">
-                        <span className="w-2 h-2 rounded-full bg-indigo-500 mr-1.5 animate-pulse"></span>
+                        <span className="w-2 h-2 rounded-full bg-indigo-500 mr-1.5" 
+                          style={{ animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}
+                        ></span>
                         Currently watching
                       </span>
                     ) : !isPlaying && !fullyWatched ? (
@@ -1368,7 +1416,7 @@ export default function VideoPage() {
                   </div>
                 </div>
                 
-                {/* Points info */}
+                {/* Points info - Static content, no animations needed */}
                 <div className="mb-4 border rounded-lg p-3 bg-gray-50">
                   <h4 className="font-medium text-sm text-gray-800 mb-2">Points Available:</h4>
                   <div className="space-y-2">
@@ -1387,7 +1435,6 @@ export default function VideoPage() {
                       </div>
                     )}
                     
-                    {/* Video duration information for debugging */}
                     <div className="flex justify-between items-center pt-1 mt-1 border-t border-gray-200">
                       <span className="text-xs text-gray-600">Video duration:</span>
                       <span className="text-sm font-semibold text-gray-700">
@@ -1403,9 +1450,9 @@ export default function VideoPage() {
                   </div>
                 </div>
                 
-                {/* Points status */}
+                {/* Points status - Optimized animations and transitions */}
                 {!hasEarnedPoints && !alreadyEarnedForThisVideo && !fullyWatched && (
-                  <div className={`mb-3 rounded-lg p-3 ${
+                  <div className={`mb-3 rounded-lg p-3 transition-colors duration-300 ${
                     isPlaying && watchTime < 60
                       ? 'bg-yellow-50 border border-yellow-100'
                       : 'bg-gray-50 border border-gray-100' 
@@ -1419,10 +1466,13 @@ export default function VideoPage() {
                           Watch {60 - watchTime} more seconds to earn {video.points_per_minute} points
                           {!isPlaying && ' (timer paused)'}
                         </div>
-                        <div className="mt-2 w-full bg-gray-200 rounded-full h-1">
+                        <div className="mt-2 w-full bg-gray-200 rounded-full h-1 overflow-hidden">
                           <div 
-                            className="h-1 rounded-full bg-yellow-500"
-                            style={{ width: `${(watchTime / 60) * 100}%` }}
+                            className="h-1 rounded-full bg-yellow-500 transition-all duration-300"
+                            style={{ 
+                              width: `${(watchTime / 60) * 100}%`,
+                              transition: 'width 300ms ease-out'
+                            }}
                           ></div>
                         </div>
                       </div>
@@ -1443,7 +1493,7 @@ export default function VideoPage() {
                       Continue watching to earn 1 point per minute
                     </p>
                     {isPlaying && (
-                      <div className="flex items-center bg-yellow-100 px-2 py-1 rounded text-xs text-yellow-800 animate-pulse">
+                      <div className="flex items-center bg-yellow-100 px-2 py-1 rounded text-xs text-yellow-800">
                         <svg className="h-3 w-3 text-yellow-500 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
                           <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14.5a6.5 6.5 0 110-13 6.5 6.5 0 010 13z" />
                           <path d="M10 5a1 1 0 00-1 1v4.5a1 1 0 00.293.707l2.5 2.5a1 1 0 001.414-1.414L10.5 9.5V6a1 1 0 00-1-1z" />
@@ -1520,6 +1570,28 @@ export default function VideoPage() {
                       {watchlistItem ? 'Remove from Watchlist' : 'Add to Watchlist'}
                     </button>
                   )}
+                </div>
+              </div>
+            ) : video && !user && (
+              <div className="bg-white rounded-lg shadow-lg p-5 sticky top-24 h-fit">
+                <h3 className="text-lg font-semibold mb-4 border-b pb-2">Points Available</h3>
+                <div className="space-y-4">
+                  <div className="p-4 bg-indigo-50 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-gray-600">First minute:</span>
+                      <span className="text-lg font-semibold text-indigo-600">{video.points_per_minute} pts</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">After first minute:</span>
+                      <span className="text-lg font-semibold text-purple-600">1 pt/min</span>
+                    </div>
+                  </div>
+                  <Link
+                    href="/register"
+                    className="block w-full text-center bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition-colors"
+                  >
+                    Sign up to earn points
+                  </Link>
                 </div>
               </div>
             )}

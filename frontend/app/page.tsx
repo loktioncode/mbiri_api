@@ -78,30 +78,6 @@ export default function Home() {
 
   return (
     <div className="relative">
-      {!user && (
-        <div className="mb-8 rounded-lg bg-indigo-50 p-4">
-          <div className="flex items-center">
-            <UserPlusIcon className="h-6 w-6 text-indigo-600" />
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-indigo-800">
-                Sign up to earn points!
-              </h3>
-              <p className="mt-1 text-sm text-indigo-600">
-                Create an account to track your progress and earn points for watching videos.
-              </p>
-            </div>
-            <div className="ml-auto">
-              <Link
-                href="/register"
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-              >
-                Sign up now
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="mb-8 flex items-center justify-between">
         <h1 className="text-3xl font-bold text-gray-900">Featured Videos</h1>
         {user?.user_type === 'viewer' && (
