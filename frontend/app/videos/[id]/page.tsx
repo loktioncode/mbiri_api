@@ -1029,7 +1029,7 @@ export default function VideoPage() {
     <div className="container mx-auto px-4 py-6">
       <Toaster />
       
-      <div className="mb-0">
+      <div className="mb-">
         <button 
           onClick={() => router.back()}
           className="cursor-pointer inline-flex items-center text-indigo-600 hover:text-indigo-800 transition-colors"
@@ -1078,7 +1078,7 @@ export default function VideoPage() {
                   <iframe
                     ref={iframeRef}
                     id="youtube-player"
-                    src={`https://www.youtube.com/embed/${video.youtube_id}?enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&modestbranding=1&showinfo=0&controls=1`}
+                    src={`https://www.youtube.com/embed/${video.youtube_id}?enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&modestbranding=1&showinfo=0&controls=1&playsinline=1&enablejsapi=1&widget_referrer=${encodeURIComponent(window.location.href)}`}
                     title={video.title}
                     allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen

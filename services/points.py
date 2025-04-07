@@ -114,6 +114,11 @@ async def record_watch_session(
         # Get the video's specified points_per_minute rate (for first minute/first-time watchers)
         video_points_per_minute = video.get("points_per_minute", DEFAULT_POINTS_PER_MINUTE)
         logger.info(f"Video points per minute: {video_points_per_minute}")
+        logger.info(f"Watch duration: {watch_duration} seconds")
+        logger.info(f"Existing view: {existing_view}")
+        logger.info(f"Already earned: {already_earned}")
+        logger.info(f"Fully watched: {fully_watched}")
+        logger.info(f"Video length: {video_length} seconds")
         
         # Fixed at 1 point per minute for continued watching
         continued_points_per_minute = 1
@@ -125,7 +130,7 @@ async def record_watch_session(
             logger.info(f"Previous watch duration: {previous_duration} seconds")
             
             # Only award points for additional time if more time was watched
-            if watch_duration > previous_duration and not fully_watched:
+            if watch_duration >= previous_duration and not fully_watched:
                 additional_seconds = watch_duration - previous_duration
                 additional_minutes = additional_seconds / 60.0  # Use floating point for more precise calculation
                 logger.info(f"Additional time watched: {additional_seconds} seconds = {additional_minutes:.2f} minutes")
@@ -143,9 +148,15 @@ async def record_watch_session(
                         logger.info(f"No points awarded: video_length ({video_length}) not greater than watch_duration ({watch_duration})")
                         points_earned = 0
                 else:
-                    # Award 1 point per minute for continued watching (this handles if they haven't earned points yet)
-                    points_earned = int(continued_points_per_minute * additional_minutes)
-                    logger.info(f"CALCULATION: continued_points_per_minute ({continued_points_per_minute}) * additional_minutes ({additional_minutes:.2f}) = {points_earned}")
+                    # First time watching this video - check if we need to award first minute points
+                    if previous_duration < 60 and watch_duration >= 60:
+                        # User just completed their first minute - award full first minute points
+                        points_earned = video_points_per_minute
+                        logger.info(f"CALCULATION: First minute completed - awarding {video_points_per_minute} points")
+                    else:
+                        # Award 1 point per minute for continued watching
+                        points_earned = int(continued_points_per_minute * additional_minutes)
+                        logger.info(f"CALCULATION: continued_points_per_minute ({continued_points_per_minute}) * additional_minutes ({additional_minutes:.2f}) = {points_earned}")
                     logger.info(f"Awarding points: {points_earned} points for {additional_minutes:.2f} additional minutes")
             else:
                 logger.info(f"No additional time watched or video fully watched. "
