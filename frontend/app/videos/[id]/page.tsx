@@ -812,29 +812,6 @@ export default function VideoPage() {
     };
   }, [videoId, watchTime]);
 
-  // Add a resume notification if applicable
-  useEffect(() => {
-    const savedTime = getWatchTime(videoId);
-    if (savedTime > 0 && videoData) {
-      const minutes = Math.floor(savedTime / 60);
-      const seconds = savedTime % 60;
-      
-      // Only show the notification if they've watched more than 10 seconds
-      if (savedTime > 10) {
-        toast.success(
-          <div className="flex items-center space-x-2">
-            <span>Resuming from {minutes}m {seconds}s</span>
-          </div>,
-          {
-            duration: TOAST_DURATION,
-            position: 'bottom-center',
-            icon: '⏱️',
-          }
-        );
-      }
-    }
-  }, [videoData, videoId]);
-
   // Add reset function
   const resetWatchProgress = () => {
     // Clear saved watch time
@@ -1055,7 +1032,7 @@ export default function VideoPage() {
       <div className="mb-4">
         <button 
           onClick={() => router.back()}
-          className="inline-flex items-center text-indigo-600 hover:text-indigo-800 transition-colors"
+          className="cursor-pointer inline-flex items-center text-indigo-600 hover:text-indigo-800 transition-colors"
         >
           <ArrowLeftIcon className="h-5 w-5 mr-1" />
           <span>Back</span>
