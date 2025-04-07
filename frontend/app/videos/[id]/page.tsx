@@ -215,6 +215,18 @@ const TOAST_DURATION = 1500;
 // Constant for bonus points rate (fixed 1 point per minute)
 const POINTS_PER_MINUTE = 1;
 
+// Add function to fetch watch time from backend
+async function fetchWatchTime(videoId: string) {
+  try {
+    console.log(`Fetching watch time for video ${videoId} from backend`);
+    const response = await api.get(`/api/videos/${videoId}/watch-time`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching watch time:', error);
+    return null;
+  }
+}
+
 export default function VideoPage() {
   const params = useParams();
   const videoId = params.id as string;
@@ -694,6 +706,74 @@ export default function VideoPage() {
     }
   };
 
+  // Modify the initialization useEffect to fetch and sync watch times
+  useEffect(() => {
+    if (videoData && videoId && user?.user_type === 'viewer') {
+      const initializeWatchTime = async () => {
+        // First check local storage
+        const localWatchTime = getWatchTime(videoId);
+        
+        try {
+          // Fetch watch time from backend
+          const backendData = await fetchWatchTime(videoId);
+          
+          if (backendData?.watch_duration) {
+            console.log(`Got watch duration from backend: ${backendData.watch_duration}s`);
+            
+            // Compare with local storage and use the higher value
+            const finalWatchTime = Math.max(localWatchTime, backendData.watch_duration);
+            
+            if (finalWatchTime > 0) {
+              console.log(`Setting initial watch time to ${finalWatchTime}s`);
+              setWatchTime(finalWatchTime);
+              saveWatchTime(videoId, finalWatchTime);
+              
+              // If they've already watched more than a minute, mark as earned
+              if (finalWatchTime >= 60) {
+                setHasEarnedPoints(true);
+                pointsEarnedNotificationShown.current = true;
+              }
+              
+              // Show resume notification
+              if (finalWatchTime > 10) {
+                const minutes = Math.floor(finalWatchTime / 60);
+                const seconds = finalWatchTime % 60;
+                toast.success(
+                  <div className="flex items-center space-x-2">
+                    <span>Resuming from {minutes}m {seconds}s</span>
+                  </div>,
+                  {
+                    duration: TOAST_DURATION,
+                    position: 'bottom-center',
+                    icon: '⏱️',
+                  }
+                );
+              }
+            }
+            
+            // If backend indicates video is fully watched
+            if (backendData.fully_watched) {
+              setFullyWatched(true);
+            }
+            
+            // If backend indicates points were already earned
+            if (backendData.points_earned) {
+              setAlreadyEarnedForThisVideo(true);
+            }
+          }
+        } catch (error) {
+          console.error('Error initializing watch time:', error);
+          // Fallback to local storage value if backend fetch fails
+          if (localWatchTime > 0) {
+            setWatchTime(localWatchTime);
+          }
+        }
+      };
+      
+      initializeWatchTime();
+    }
+  }, [videoData, videoId, user]);
+
   // Setup YouTube iframe API and get video duration
   useEffect(() => {
     if (!videoData || !iframeRef.current || !isVideoMounted) return;
@@ -882,23 +962,8 @@ export default function VideoPage() {
       // Clean up
       window.onYouTubeIframeAPIReady = function() {};
     };
-  }, [videoData, isVideoMounted]);
+  }, [videoData, isVideoMounted, user, videoId, watchTime, isPlaying, watchSessionStarted]);
 
-  // Initialize watchTime from localStorage if available
-  useEffect(() => {
-    if (videoData && videoId) {
-      const savedTime = getWatchTime(videoId);
-      if (savedTime > 0) {
-        setWatchTime(savedTime);
-        // If they've already watched more than a minute, mark as earned
-        if (savedTime >= 60) {
-          setHasEarnedPoints(true);
-          pointsEarnedNotificationShown.current = true;
-        }
-      }
-    }
-  }, [videoData, videoId]);
-  
   // Save watch time to localStorage periodically and when component unmounts
   useEffect(() => {
     if (!videoId || watchTime <= 0) return;

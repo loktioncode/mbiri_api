@@ -14,7 +14,7 @@ from services.video import (
     get_discover_videos
 )
 from services.points import record_watch_session
-from database import videos_collection
+from database import videos_collection, views_collection
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
@@ -269,3 +269,58 @@ async def update_video_duration_post(
             "video_id": video_id,
             "duration_seconds": duration_seconds
         }
+
+
+@router.get("/{video_id}/watch-time")
+async def get_video_watch_time(
+        video_id: str,
+        current_user: UserInDB = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Get the current watch time for a video from the views collection
+    """
+    if current_user.user_type != "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only viewers can access watch time"
+        )
+
+    try:
+        # Get the view record for this user and video
+        view_record = await views_collection.find_one({
+            "video_id": ObjectId(video_id),
+            "viewer_id": ObjectId(current_user.id)
+        })
+
+        # Get video details for duration
+        video = await get_video_by_id(video_id)
+        video_duration = getattr(video, "duration_seconds", 600) if video else 600
+
+        if view_record:
+            return {
+                "success": True,
+                "watch_duration": view_record.get("watch_duration", 0),
+                "video_duration": video_duration,
+                "fully_watched": view_record.get("fully_watched", False),
+                "points_earned": view_record.get("points_earned", 0) > 0,
+                "total_points": view_record.get("points_earned", 0),
+                "created_at": view_record.get("created_at", None)
+            }
+        else:
+            # No view record found - return zeros
+            return {
+                "success": True,
+                "watch_duration": 0,
+                "video_duration": video_duration,
+                "fully_watched": False,
+                "points_earned": False,
+                "total_points": 0,
+                "created_at": None
+            }
+
+    except Exception as e:
+        print(f"Error fetching watch time: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching watch time: {str(e)}"
+        )
