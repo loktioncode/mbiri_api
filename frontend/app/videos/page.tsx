@@ -8,6 +8,14 @@ import { useAuth } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+// Add types for the YouTube API
+declare global {
+  interface Window {
+    YT: any;
+    onYouTubeIframeAPIReady: () => void;
+  }
+}
+
 // Interface for videos
 interface Video {
   id: string;
@@ -87,6 +95,18 @@ export default function WatchLaterPage() {
       router.push('/');
     }
   }, [user, router]);
+  
+  // Load YouTube API
+  useEffect(() => {
+    if (!window.YT && watchlistWithVideos.length > 0) {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      if (firstScriptTag && firstScriptTag.parentNode) {
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+      }
+    }
+  }, [watchlistWithVideos]);
 
   // Load watchlist data from localStorage
   useEffect(() => {
@@ -182,52 +202,65 @@ export default function WatchLaterPage() {
           {watchlistWithVideos.map((item) => (
             <div
               key={item.watchlist_id}
-              className={`group relative overflow-hidden rounded-lg bg-white shadow-lg ${
+              className={`group overflow-hidden rounded-lg bg-white shadow-lg transition-transform hover:scale-105 ${
                 item.points_earned ? 'opacity-75' : ''
               }`}
             >
-              <Link href={`/videos/${item.video.id}`}>
-                <div className="relative">
-                  <img
-                    src={`https://img.youtube.com/vi/${item.video.youtube_id}/maxresdefault.jpg`}
-                    alt={item.video.title}
-                    className="h-48 w-full object-cover"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 transition-opacity group-hover:bg-opacity-50">
-                    <PlayIcon className="h-16 w-16 text-white opacity-0 transition-opacity group-hover:opacity-100" />
+              <div className="relative h-48">
+                {/* Video preview - autoplaying but muted */}
+                <iframe
+                  src={`https://www.youtube.com/embed/${item.video.youtube_id}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&loop=1&playlist=${item.video.youtube_id}&start=5&end=15`}
+                  title={item.video.title}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  className="absolute inset-0 w-full h-full"
+                ></iframe>
+                
+                {/* Click overlay to go to video page */}
+                <Link href={`/videos/${item.video.id}`} className="absolute inset-0 z-10">
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/40 transition-colors">
+                    <div className="bg-indigo-600/80 hover:bg-indigo-700/90 rounded-full p-4 flex items-center justify-center transition-all">
+                      <PlayIcon className="h-8 w-8 text-white" />
+                    </div>
+                  </div>
+                </Link>
+                
+                {/* Watch full video label */}
+                <div className="absolute bottom-8 left-0 right-0 flex justify-center z-20">
+                  <div className="bg-black/60 text-white text-xs px-3 py-1 rounded-full">
+                    Click to watch full video
                   </div>
                 </div>
-              </Link>
+                
+                {/* Remove button */}
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleRemoveFromWatchlist(item.video_id);
+                  }}
+                  className="absolute top-2 right-2 z-30 bg-white/80 hover:bg-white rounded-full p-1.5 text-gray-600 hover:text-red-500 shadow-md transition-colors"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                </button>
+              </div>
 
               <div className="p-4">
-                <div className="mb-2 flex items-start justify-between">
-                  <Link href={`/videos/${item.video.id}`}>
-                    <h2 className="text-lg font-semibold text-gray-900 hover:text-indigo-600">
-                      {item.video.title}
-                    </h2>
-                  </Link>
-                  <button
-                    onClick={() => handleRemoveFromWatchlist(item.video_id)}
-                    className="ml-2 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-500"
-                  >
-                    <TrashIcon className="h-5 w-5" />
-                  </button>
-                </div>
-
-                <p className="mb-4 text-sm text-gray-600 line-clamp-2">
-                  {item.video.description}
-                </p>
+                <Link href={`/videos/${item.video.id}`}>
+                  <h2 className="mb-2 text-base font-semibold text-gray-900 line-clamp-2 hover:text-indigo-600">
+                    {item.video.title}
+                  </h2>
+                </Link>
 
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-500">
                     By {item.video.creator_username}
                   </span>
                   {item.points_earned ? (
-                    <span className="rounded-full bg-green-100 px-3 py-1 text-sm text-green-800">
+                    <span className="rounded-full bg-green-100 px-3 py-1 text-xs text-green-800">
                       Points earned
                     </span>
                   ) : (
-                    <span className="rounded-full bg-indigo-100 px-3 py-1 text-sm text-indigo-800">
+                    <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs text-indigo-800">
                       Earn {item.video.points_per_minute} pts/min
                     </span>
                   )}

@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { PlayIcon, BookmarkIcon, BookmarkSlashIcon, XMarkIcon, PauseIcon } from '@heroicons/react/24/outline';
+import { PlayIcon, BookmarkIcon, BookmarkSlashIcon, XMarkIcon, PauseIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useEffect, useState, useRef, useCallback } from 'react';
@@ -139,6 +139,9 @@ const calculateProgress = (currentTime: number, totalDuration: number | undefine
   }
   return Math.min((currentTime / totalDuration) * 100, 100);
 };
+
+// Adjust toast duration setting for all toasts
+const TOAST_DURATION = 15000; // 15 seconds
 
 export default function VideoPage() {
   const params = useParams();
@@ -338,7 +341,7 @@ export default function VideoPage() {
             <span className="text-sm mt-1">Added to your profile</span>
           </div>,
           {
-            duration: 4000,
+            duration: TOAST_DURATION,
             position: 'bottom-center',
             className: 'bg-indigo-50 text-indigo-800 border border-indigo-200',
             icon: '💰',
@@ -378,7 +381,28 @@ export default function VideoPage() {
     };
   }, []);
   
-  // Handle reporting watch time to the API
+  // Update toast configuration for point earnings
+  const showPointsEarnedToast = (points: number) => {
+    toast.success(
+      <div className="flex items-center space-x-2">
+        <span className="font-bold text-lg">+{points} points!</span>
+        <span className="text-sm">(continue for bonus points)</span>
+      </div>,
+      {
+        duration: TOAST_DURATION,
+        position: 'bottom-center',
+        className: 'bg-green-50 text-green-800 border border-green-200',
+        icon: '🎉',
+        style: {
+          padding: '16px',
+          fontSize: '16px'
+        },
+        id: 'main-points-earned'
+      }
+    );
+  };
+
+  // Modify handleReportWatchTime to use the new toast function
   const handleReportWatchTime = async (duration: number = watchTime) => {
     if (!(user?.user_type === 'viewer') || !video) return;
     
@@ -406,7 +430,7 @@ export default function VideoPage() {
               <span className="text-sm">(for continued watching)</span>
             </div>,
             {
-              duration: 5000,
+              duration: TOAST_DURATION,
               position: 'bottom-center',
               className: 'bg-indigo-50 text-indigo-800 border border-indigo-200',
               icon: '✨',
@@ -456,26 +480,10 @@ export default function VideoPage() {
               </button>
             </div>
           </div>
-        ), { duration: 3000, id: 'navbar-points-update' });
+        ), { duration: TOAST_DURATION, id: 'navbar-points-update' });
         
         // Show main points earned toast
-        toast.success(
-          <div className="flex items-center space-x-2">
-            <span className="font-bold text-lg">+{result.points_earned} points!</span>
-            <span className="text-sm">(continue for bonus points)</span>
-          </div>,
-          {
-            duration: 5000,
-            position: 'bottom-center',
-            className: 'bg-green-50 text-green-800 border border-green-200',
-            icon: '🎉',
-            style: {
-              padding: '16px',
-              fontSize: '16px'
-            },
-            id: 'main-points-earned'
-          }
-        );
+        showPointsEarnedToast(result.points_earned);
         
         // Show a more prominent celebratory notification
         toast.custom(
@@ -510,7 +518,7 @@ export default function VideoPage() {
               </div>
             </div>
           ),
-          { duration: 5000, position: 'top-center', id: 'celebratory-toast' }
+          { duration: TOAST_DURATION, position: 'top-center', id: 'celebratory-toast' }
         );
         
         // Update state and flag
@@ -735,7 +743,7 @@ export default function VideoPage() {
             <span>Resuming from {minutes}m {seconds}s</span>
           </div>,
           {
-            duration: 3000,
+            duration: TOAST_DURATION,
             position: 'bottom-center',
             icon: '⏱️',
           }
@@ -767,7 +775,9 @@ export default function VideoPage() {
       console.error('Error restarting video:', error);
     }
     
-    toast.success('Watch progress reset');
+    toast.success('Watch progress reset', {
+      duration: TOAST_DURATION
+    });
   };
 
   // Add an effect for beforeunload event to warn users when leaving
@@ -872,7 +882,7 @@ export default function VideoPage() {
                 </button>
               </div>
             ), { 
-              duration: 5000, 
+              duration: TOAST_DURATION, 
               position: 'top-right',
               id: 'already-earned-points'
             });
@@ -1032,6 +1042,17 @@ export default function VideoPage() {
   return (
     <div className="container mx-auto px-4 py-6">
       <Toaster />
+      
+      {/* Back button */}
+      <div className="mb-4">
+        <button 
+          onClick={() => router.back()}
+          className="inline-flex items-center text-indigo-600 hover:text-indigo-800 transition-colors"
+        >
+          <ArrowLeftIcon className="h-5 w-5 mr-1" />
+          <span>Back</span>
+        </button>
+      </div>
       
       {/* Main content area with video player and tracker side by side */}
       <div className="flex flex-col space-y-8">
