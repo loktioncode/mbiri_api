@@ -1087,9 +1087,9 @@ export default function VideoPage() {
                   <iframe
                     ref={iframeRef}
                     id="youtube-player"
-                    src={`https://www.youtube.com/embed/${video.youtube_id}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&modestbranding=1&showinfo=0&controls=1`}
+                    src={`https://www.youtube.com/embed/${video.youtube_id}?enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}&rel=0&modestbranding=1&showinfo=0&controls=1`}
                     title={video.title}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                     className="w-full h-full"
                   />
@@ -1322,9 +1322,9 @@ export default function VideoPage() {
                   >
                     <div className="relative h-48">
                       <iframe
-                        src={`https://www.youtube.com/embed/${rec.youtube_id}?autoplay=1&mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&loop=1&playlist=${rec.youtube_id}&start=5&end=15`}
+                        src={`https://www.youtube.com/embed/${rec.youtube_id}?mute=1&controls=0&modestbranding=1&showinfo=0&rel=0&loop=1&playlist=${rec.youtube_id}&start=5&end=15`}
                         title={rec.title}
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         className="absolute inset-0 w-full h-full"
                       />
                       
