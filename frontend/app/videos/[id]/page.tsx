@@ -154,6 +154,7 @@ export default function VideoPage() {
   const watchTimeIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const pointsEarnedNotificationShown = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const playerRef = useRef<any>(null); // Reference to store the YouTube player instance
   const lastActivityTime = useRef(Date.now());
   const [alreadyEarnedForThisVideo, setAlreadyEarnedForThisVideo] = useState(false);
   const [video, setVideo] = useState<Video | null>(null);
@@ -554,7 +555,19 @@ export default function VideoPage() {
   // Handle play/pause button click
   const handlePlayPauseClick = () => {
     try {
-      // Access the YouTube player
+      // Use the stored player reference if available
+      if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
+        const playerState = playerRef.current.getPlayerState();
+        // YT.PlayerState.PLAYING = 1, YT.PlayerState.PAUSED = 2
+        if (playerState === 1) {
+          playerRef.current.pauseVideo();
+        } else {
+          playerRef.current.playVideo();
+        }
+        return; // Let the state update come from the player state change event
+      }
+      
+      // Fallback to YouTube iframe API if playerRef is not available
       if (window.YT && iframeRef.current && iframeRef.current.id) {
         const player = window.YT.get(iframeRef.current.id);
         if (player) {
@@ -612,6 +625,7 @@ export default function VideoPage() {
             'onStateChange': onPlayerStateChange
           }
         });
+        playerRef.current = player;
       } catch (error) {
         console.error('Error initializing YouTube player:', error);
       }
@@ -636,8 +650,23 @@ export default function VideoPage() {
             };
           });
         }
+        
+        // Seek to the saved time position if available
+        const savedTime = getWatchTime(videoId);
+        if (savedTime > 0) {
+          console.log(`Seeking to saved time: ${savedTime} seconds`);
+          // Seek to saved position
+          event.target.seekTo(savedTime);
+          // Ensure video plays after seeking
+          setTimeout(() => {
+            if (event.target && typeof event.target.playVideo === 'function') {
+              event.target.playVideo();
+              setWatchTime(savedTime);
+            }
+          }, 500);
+        }
       } catch (error) {
-        console.error('Error getting video duration:', error);
+        console.error('Error getting video duration or seeking:', error);
       }
     };
     
@@ -683,7 +712,7 @@ export default function VideoPage() {
     // Save every 5 seconds to avoid excessive writes
     const saveInterval = setInterval(() => {
       saveWatchTime(videoId, watchTime);
-    }, 5000);
+    }, 30000);
     
     // Also save on unmount
     return () => {
